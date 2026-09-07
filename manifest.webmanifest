@@ -1,0 +1,17 @@
+{
+  "name": "KSL Digital Log Book",
+  "short_name": "KSL Log",
+  "description": "Futuristic digital log book: service requests, e-signature, offline queue and Google Sheets sync.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1424",
+  "theme_color": "#0e1424",
+  "lang": "en",
+  "categories": ["productivity", "business"],
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

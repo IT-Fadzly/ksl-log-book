@@ -1,0 +1,13 @@
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# local scratch
+_p.html
+_t.html
+_d.html
+_preview.html
+node_modules/

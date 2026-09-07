@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#faf7f4" />
+<meta name="description" content="KSL Digital Log Book - futuristic service request and activity log with e-signature, offline queue and Google Sheets sync." />
+<title>KSL · Digital Log Book</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="assets/icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        display: ['Outfit', '"Plus Jakarta Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+      },
+      colors: {
+        ink: 'rgb(var(--ink) / <alpha-value>)',
+        subink: 'rgb(var(--subink) / <alpha-value>)',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
+        surface: 'rgb(var(--surface) / <alpha-value>)',
+        panel: 'rgb(var(--panel) / <alpha-value>)',
+        line: 'rgb(var(--line) / <alpha-value>)',
+        neon: 'var(--accent)',
+        plasma: 'var(--accent-2)'
+      },
+      boxShadow: {
+        glow: '0 10px 24px -12px rgb(91 83 232 / .6)'
+      }
+    }
+  }
+}
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<script>
+  /* set the saved theme before first paint so the page never flashes */
+  try {
+    var c = JSON.parse(localStorage.getItem('ksl_config_v1') || '{}');
+    if (c.theme === 'dark') document.documentElement.classList.add('dark');
+  } catch (e) {}
+</script>
+</head>
+<body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
+
+<!-- ambient background -->
+<div class="bg-stage" aria-hidden="true">
+  <div class="aurora aurora-1"></div>
+  <div class="aurora aurora-2"></div>
+  <div class="aurora aurora-3"></div>
+  <div class="grid-veil"></div>
+</div>
+
+<!-- header -->
+<header class="sticky top-0 z-40 border-b border-line/70 bg-surface/70 backdrop-blur-xl">
+  <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
+    <div class="relative grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neon font-display text-xl font-bold text-white shadow-glow">
+      K<span class="ping-dot"></span>
+    </div>
+    <div class="min-w-0 flex-1">
+      <h1 class="truncate font-display text-[15px] font-semibold leading-tight tracking-tight">KSL <span class="gradient-text">Digital Log Book</span></h1>
+      <p class="truncate text-[11px] text-muted"><span id="clock" class="font-mono">--:--:--</span> · <span id="net-state">online</span></p>
+    </div>
+
+    <button id="btn-sync" class="icon-btn relative" title="Sync to Google Sheet" aria-label="Sync to Google Sheet">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg>
+      <span id="sync-badge" class="hidden absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 font-mono text-[9px] font-bold text-slate-950">0</span>
+    </button>
+    <button id="btn-lang" class="icon-btn" title="Bahasa / English" aria-label="Toggle language">
+      <span class="font-mono text-[11px] font-semibold" id="lang-label">EN</span>
+    </button>
+    <button id="btn-theme" class="icon-btn" title="Theme" aria-label="Toggle theme">
+      <svg class="h-[18px] w-[18px] dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      <svg class="hidden h-[18px] w-[18px] dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <button id="btn-install" class="icon-btn hidden" title="Install app" aria-label="Install app">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    </button>
+  </div>
+
+  <nav class="mx-auto hidden max-w-5xl gap-1 px-4 pb-2 sm:flex" role="tablist">
+    <button class="tab-btn" data-view="new" role="tab"><span data-i18n="nav.new">New Entry</span></button>
+    <button class="tab-btn" data-view="log" role="tab"><span data-i18n="nav.log">Log Book</span> <span id="tab-count" class="tab-badge">0</span></button>
+    <button class="tab-btn" data-view="stats" role="tab"><span data-i18n="nav.stats">Dashboard</span></button>
+    <button class="tab-btn" data-view="setup" role="tab"><span data-i18n="nav.setup">Sheet</span></button>
+  </nav>
+</header>
+
+<main class="mx-auto max-w-5xl px-4 pb-32 pt-5 sm:pb-16">
+
+  <!-- ═══ NEW ENTRY ═══ -->
+  <section id="view-new" class="view space-y-4">
+
+    <div class="glass relative overflow-hidden p-5">
+      <div class="corner-mark"></div>
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-[11px] uppercase tracking-[.22em] text-neon" data-i18n="form.kicker">Service request</p>
+          <h2 class="mt-1 font-display text-2xl font-bold tracking-tight" data-i18n="form.title">What do you need? 👋</h2>
+          <p class="mt-1 text-[13px] text-subink" data-i18n="form.sub">Takes about a minute. Works offline — it syncs itself when you're back on.</p>
+        </div>
+        <div class="hidden shrink-0 sm:block">
+          <div class="progress-ring" id="ring"><span id="ring-val" class="font-mono text-[13px] font-semibold">0%</span></div>
+        </div>
+      </div>
+      <div class="mt-4 flex items-center gap-2 rounded-xl border border-line bg-panel/60 px-3 py-2">
+        <span class="text-[11px] uppercase tracking-wider text-muted" data-i18n="form.ticket">Ticket</span>
+        <span id="ticket-id" class="font-mono text-[13px] font-semibold text-neon">LOG-000000-000</span>
+        <span class="ml-auto text-[11px] text-muted" data-i18n="form.auto">auto</span>
+      </div>
+    </div>
+
+    <form id="entry-form" class="space-y-4" novalidate>
+
+      <div class="glass p-5">
+        <div class="field-head">
+          <h3 class="field-title" data-i18n="f.when">When did it happen?</h3>
+          <button type="button" id="btn-now" class="chip chip-ghost"><span data-i18n="f.now">Now</span></button>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="fl">
+            <input type="date" name="date" required class="input" />
+            <span class="fl-label fl-static" data-i18n="f.date">Date</span>
+          </label>
+          <label class="fl">
+            <input type="time" name="time" required class="input" />
+            <span class="fl-label fl-static" data-i18n="f.time">Time</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="glass p-5">
+        <div class="field-head"><h3 class="field-title" data-i18n="f.who">Who's asking?</h3></div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="fl">
+            <input type="text" name="name" required autocomplete="name" placeholder=" " class="input peer" />
+            <span class="fl-label" data-i18n="f.name">User name</span>
+          </label>
+          <label class="fl">
+            <select name="department" required class="input">
+              <option value="" selected disabled></option>
+              <option>IT &amp; Systems</option>
+              <option>Operations</option>
+              <option>Engineering</option>
+              <option>Human Resources</option>
+              <option>Finance</option>
+              <option>Security</option>
+              <option>Facilities</option>
+            </select>
+            <span class="fl-label fl-static" data-i18n="f.dept">Department</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="glass p-5">
+        <div class="field-head"><h3 class="field-title" data-i18n="f.what">What's up?</h3></div>
+
+        <p class="mb-2 text-[12px] font-medium text-subink" data-i18n="f.cat">Category</p>
+        <div class="mb-5 flex flex-wrap gap-2" id="cat-group">
+          <button type="button" class="chip" data-cat="Hardware">🖥 <span data-i18n="cat.hw">Hardware</span></button>
+          <button type="button" class="chip" data-cat="Software">💾 <span data-i18n="cat.sw">Software</span></button>
+          <button type="button" class="chip" data-cat="Network">📡 <span data-i18n="cat.net">Network</span></button>
+          <button type="button" class="chip" data-cat="Access">🔐 <span data-i18n="cat.acc">Access</span></button>
+          <button type="button" class="chip" data-cat="Maintenance">🛠 <span data-i18n="cat.mt">Maintenance</span></button>
+          <button type="button" class="chip" data-cat="Other">✦ <span data-i18n="cat.ot">Other</span></button>
+        </div>
+
+        <p class="mb-2 text-[12px] font-medium text-subink" data-i18n="f.pri">Priority</p>
+        <div class="segmented mb-5" id="pri-group">
+          <button type="button" data-pri="Low"><span data-i18n="pri.low">Low</span></button>
+          <button type="button" data-pri="Medium" class="is-on"><span data-i18n="pri.med">Medium</span></button>
+          <button type="button" data-pri="High"><span data-i18n="pri.high">High</span></button>
+          <button type="button" data-pri="Critical"><span data-i18n="pri.crit">Critical</span></button>
+        </div>
+
+        <label class="fl block">
+          <textarea name="request" required rows="4" maxlength="600" placeholder=" " class="input peer resize-y"></textarea>
+          <span class="fl-label" data-i18n="f.req">User request</span>
+        </label>
+        <div class="mt-1 flex justify-between text-[11px] text-muted">
+          <span data-i18n="f.reqhint">Describe the issue or activity</span>
+          <span><span id="char-count">0</span>/600</span>
+        </div>
+
+        <div class="mt-5">
+          <p class="mb-2 text-[12px] font-medium text-subink" data-i18n="f.photo">Photo evidence (optional)</p>
+          <div class="flex items-center gap-3">
+            <label class="chip chip-ghost cursor-pointer">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.2l1-2h4.6l1 2h5.2A2.5 2.5 0 0 1 21 6.5v11A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5Z"/><circle cx="12" cy="13" r="3.4"/></svg>
+              <span data-i18n="f.capture">Capture</span>
+              <input type="file" id="photo-input" accept="image/*" capture="environment" class="hidden" />
+            </label>
+            <div id="photo-wrap" class="hidden items-center gap-2">
+              <img id="photo-preview" alt="" class="h-12 w-12 rounded-lg border border-line object-cover" />
+              <button type="button" id="photo-clear" class="text-[12px] text-rose-400 hover:underline" data-i18n="f.remove">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass p-5">
+        <div class="field-head">
+          <div>
+            <h3 class="field-title" data-i18n="f.sig">Sign here</h3>
+            <p class="text-[12px] text-muted" data-i18n="f.sighint">Use your finger — a scribble is fine</p>
+          </div>
+          <div class="flex items-center gap-2" id="ink-group">
+            <button type="button" class="ink is-on" data-ink="#141414" style="--ink-c:#141414" aria-label="Black ink"></button>
+            <button type="button" class="ink" data-ink="#2a78d6" style="--ink-c:#2a78d6" aria-label="Blue ink"></button>
+            <button type="button" class="ink" data-ink="#e34948" style="--ink-c:#e34948" aria-label="Red ink"></button>
+            <button type="button" class="ink" data-ink="#1baf7a" style="--ink-c:#1baf7a" aria-label="Green ink"></button>
+          </div>
+        </div>
+        <div class="sig-wrap">
+          <canvas id="sig-pad" class="sig-pad" aria-label="Signature pad"></canvas>
+          <span id="sig-hint" class="sig-hint" data-i18n="f.signhere">✍️ draw your signature</span>
+        </div>
+        <div class="mt-2 flex justify-end gap-4 text-[12px]">
+          <button type="button" id="sig-undo" class="text-subink hover:text-neon" data-i18n="f.undo">Undo</button>
+          <button type="button" id="sig-clear" class="text-plasma hover:underline" data-i18n="f.clear">Clear</button>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <button type="submit" id="btn-submit" class="btn-primary flex-1">
+          <span data-i18n="f.submit">Send it 🚀</span>
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m0 0-5-5m5 5-5 5"/></svg>
+        </button>
+        <button type="button" id="btn-reset" class="btn-ghost" data-i18n="f.reset">Reset</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ═══ LOG BOOK ═══ -->
+  <section id="view-log" class="view hidden space-y-4">
+    <div class="glass p-4">
+      <div class="relative">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search name, ticket, request..." data-i18n-ph="log.search" class="input pl-9" />
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <select id="f-status" class="mini-select"><option value="">All status</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Resolved">Resolved</option></select>
+        <select id="f-dept" class="mini-select"><option value="">All departments</option></select>
+        <select id="f-sort" class="mini-select"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="pri">By priority</option></select>
+        <div class="ml-auto flex gap-2">
+          <button id="btn-export" class="chip chip-ghost" data-i18n="log.export">Export CSV</button>
+          <label class="chip chip-ghost cursor-pointer"><span data-i18n="log.import">Import</span><input id="import-input" type="file" accept="application/json" class="hidden" /></label>
+        </div>
+      </div>
+    </div>
+
+    <div id="log-list" class="space-y-3"></div>
+
+    <div id="log-empty" class="glass hidden p-10 text-center">
+      <div class="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl border border-line bg-panel text-2xl">🗒</div>
+      <p class="font-display text-lg font-semibold" data-i18n="log.empty">Nothing here yet ✨</p>
+      <p class="mt-1 text-[13px] text-subink" data-i18n="log.emptysub">Your entries will show up here the moment you send one.</p>
+    </div>
+  </section>
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <section id="view-stats" class="view hidden space-y-4">
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div class="stat glass"><p class="stat-label" data-i18n="s.total">Total entries</p><p id="s-total" class="stat-num">0</p><p class="stat-foot" data-i18n="s.alltime">all time</p></div>
+      <div class="stat glass"><p class="stat-label" data-i18n="s.open">Open</p><p id="s-open" class="stat-num">0</p><p class="stat-foot" data-i18n="s.await">awaiting action</p></div>
+      <div class="stat glass"><p class="stat-label" data-i18n="s.res">Resolved</p><p id="s-res" class="stat-num">0</p><p id="s-rate" class="stat-foot">0% closed</p></div>
+      <div class="stat glass"><p class="stat-label" data-i18n="s.today">Today</p><p id="s-today" class="stat-num">0</p><p class="stat-foot" data-i18n="s.logged">logged today</p></div>
+    </div>
+
+    <div class="glass p-5">
+      <h3 class="chart-title" data-i18n="c.week">Entries · last 7 days</h3>
+      <p class="chart-sub" data-i18n="c.weeksub">Count of entries logged per day</p>
+      <div id="chart-week" class="chart-week mt-6"></div>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="glass p-5">
+        <h3 class="chart-title" data-i18n="c.dept">By department</h3>
+        <p class="chart-sub" data-i18n="c.deptsub">Entries per department</p>
+        <div id="chart-dept" class="mt-4 space-y-3"></div>
+      </div>
+      <div class="glass p-5">
+        <h3 class="chart-title" data-i18n="c.status">Status mix</h3>
+        <p class="chart-sub" data-i18n="c.statussub">Share of entries by current status</p>
+        <div id="chart-status" class="mt-5"></div>
+        <div id="legend-status" class="mt-4 flex flex-wrap gap-x-5 gap-y-2"></div>
+      </div>
+    </div>
+
+    <div class="glass p-5">
+      <div class="flex items-center justify-between gap-3">
+        <div><h3 class="chart-title" data-i18n="c.table">Data table</h3><p class="chart-sub" data-i18n="c.tablesub">The same numbers, in text</p></div>
+        <button id="btn-clear-all" class="chip chip-danger" data-i18n="c.wipe">Clear all</button>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[420px] text-left text-[13px]">
+          <thead><tr class="border-b border-line text-[11px] uppercase tracking-wider text-muted">
+            <th class="py-2 pr-4">Department</th><th class="py-2 pr-4">Total</th><th class="py-2 pr-4">Open</th><th class="py-2">Resolved</th>
+          </tr></thead>
+          <tbody id="stat-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ SHEET SETUP ═══ -->
+  <section id="view-setup" class="view hidden space-y-4">
+    <div class="glass p-5">
+      <p class="text-[11px] uppercase tracking-[.22em] text-neon">Cloud</p>
+      <h2 class="mt-1 font-display text-2xl font-bold tracking-tight" data-i18n="set.title">Google Sheet sync ☁️</h2>
+      <p class="mt-1 text-[13px] text-subink" data-i18n="set.sub">Every entry is saved on the device first, then pushed to your sheet. If offline, it queues and syncs automatically later.</p>
+
+      <label class="fl mt-5 block">
+        <input id="endpoint" type="url" placeholder=" " class="input peer font-mono text-[12px]" />
+        <span class="fl-label" data-i18n="set.url">Apps Script Web App URL</span>
+      </label>
+
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <button id="btn-save-endpoint" class="btn-primary !py-2 !text-[13px]"><span data-i18n="set.save">Save &amp; test</span></button>
+        <button id="btn-sync-now" class="btn-ghost !py-2 !text-[13px]"><span data-i18n="set.sync">Sync now</span></button>
+        <a id="sheet-link" href="https://docs.google.com/spreadsheets/d/1X9pxps07T4TDXeNxsS4wY8nPuZmhcxXdMp6VFptlLpE/edit" target="_blank" rel="noopener" class="chip chip-ghost" data-i18n="set.open">Open sheet ↗</a>
+      </div>
+
+      <div id="endpoint-state" class="mt-4 rounded-xl border border-line bg-panel/60 px-3 py-2 text-[12px] text-subink">
+        <span data-i18n="set.notset">Not configured — entries stay on this device only.</span>
+      </div>
+    </div>
+
+    <div class="glass p-5">
+      <h3 class="chart-title" data-i18n="set.how">How to connect (one time, ~3 minutes)</h3>
+      <ol class="mt-4 space-y-3 text-[13px] text-subink">
+        <li class="step"><span class="step-n">1</span><span data-i18n="set.s1">Open your sheet, then <b class="text-ink">Extensions → Apps Script</b>.</span></li>
+        <li class="step"><span class="step-n">2</span><span data-i18n="set.s2">Delete the sample code, paste everything from <b class="text-ink">apps-script/Code.gs</b> in this project, and Save.</span></li>
+        <li class="step"><span class="step-n">3</span><span data-i18n="set.s3">Click <b class="text-ink">Deploy → New deployment → Web app</b>. Execute as <b class="text-ink">Me</b>, access <b class="text-ink">Anyone</b>. Authorise when asked.</span></li>
+        <li class="step"><span class="step-n">4</span><span data-i18n="set.s4">Copy the <b class="text-ink">/exec</b> URL, paste it in the box above, and press Save &amp; test. A test row appears in the sheet.</span></li>
+      </ol>
+      <div class="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-200/90" data-i18n="set.note">
+        Access "Anyone" means anyone with the URL can post rows. For internal use keep the URL private, or set a SECRET in Code.gs and in the field below.
+      </div>
+      <label class="fl mt-4 block">
+        <input id="secret" type="text" placeholder=" " class="input peer font-mono text-[12px]" />
+        <span class="fl-label" data-i18n="set.secret">Shared secret (optional)</span>
+      </label>
+    </div>
+  </section>
+</main>
+
+<!-- mobile bottom nav -->
+<nav class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-surface/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden">
+  <div class="grid grid-cols-4">
+    <button class="bnav" data-view="new">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="nav.new">New Entry</span>
+    </button>
+    <button class="bnav" data-view="log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span data-i18n="nav.log">Log Book</span>
+    </button>
+    <button class="bnav" data-view="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="nav.stats">Dashboard</span>
+    </button>
+    <button class="bnav" data-view="setup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6.5 18A4.5 4.5 0 0 1 6 9.05a6 6 0 0 1 11.6 1.2A3.75 3.75 0 0 1 17 18Z"/></svg><span data-i18n="nav.setup">Sheet</span>
+    </button>
+  </div>
+</nav>
+
+<!-- detail modal -->
+<div id="modal" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/70 backdrop-blur-sm sm:items-center sm:p-6">
+  <div id="modal-card" class="glass max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-b-none rounded-t-3xl p-5 sm:rounded-3xl"></div>
+</div>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-6"></div>
+
+<script src="assets/js/app.js"></script>
+</body>
+</html>
