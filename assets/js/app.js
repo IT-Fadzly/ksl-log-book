@@ -1,175 +1,163 @@
 /* ══════════════════════════════════════════════════════════════════════
    KSL Digital Log Book
-   - offline-first: every entry is written to localStorage immediately
-   - then pushed to a Google Sheet through an Apps Script Web App
-   - anything that fails to send stays queued and retries on reconnect
+   The Google Sheet is the only store. Nothing is kept in localStorage and
+   nothing is cached: every load reads the sheet, and an entry is only
+   "saved" once the sheet has confirmed the row.
    ════════════════════════════════════════════════════════════════════ */
 (() => {
 'use strict';
 
-const DB_KEY  = 'ksl_logbook_v1';
-const CFG_KEY = 'ksl_config_v1';
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1X9pxps07T4TDXeNxsS4wY8nPuZmhcxXdMp6VFptlLpE/edit';
-
-/* Deployed Apps Script Web App. Baked in so a phone works straight away —
-   no per-device setup. Replace this after any new deployment. */
-const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzA9VCYE6btfC8hlbblRBepxCfendnU-oi8olLrE3VSbNlfnTPuTeqgd2KrCTWCZRjJTg/exec';
+const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzA9VCYE6btfC8hlbblRBepxCfendnU-oi8olLrE3VSbNlfnTPuTeqgd2KrCTWCZRjJTg/exec';
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/* ── persistence ───────────────────────────────────────────────────── */
-const store = {
-  read(key, fallback) {
-    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-    catch { return fallback; }
-  },
-  write(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-    catch { toast('Storage full — export and clear old entries.', 'err'); return false; }
-  }
-};
-
-let entries = store.read(DB_KEY, []);
-let cfg = Object.assign({
-  endpoint: DEFAULT_ENDPOINT, secret: '', lang: 'en', theme: 'light',
-  device: 'dev-' + Math.random().toString(36).slice(2, 8)
-}, store.read(CFG_KEY, {}));
-
-if (!cfg.endpoint) cfg.endpoint = DEFAULT_ENDPOINT;   // older saved config had none
-
-const saveEntries = () => store.write(DB_KEY, entries);
-const saveCfg     = () => store.write(CFG_KEY, cfg);
+/* Session state only — gone when the tab closes, by design. */
+let rows = [];
+let lang = 'en';
+let theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
 /* ── i18n ──────────────────────────────────────────────────────────── */
 const I18N = {
   en: {},
   ms: {
-    'nav.new': 'Entri Baru', 'nav.log': 'Buku Log', 'nav.stats': 'Papan Data', 'nav.setup': 'Sheet',
-    'form.kicker': 'Permohonan Servis', 'form.title': 'Rekod entri baharu',
-    'form.sub': 'Isi, tandatangan, hantar. Disimpan dalam peranti dan dihantar ke Google Sheet anda.',
+    'nav.new': 'Entri Baru', 'nav.log': 'Buku Log',
+    'form.kicker': 'Permohonan Servis', 'form.title': 'Apa yang anda perlukan? 👋',
+    'form.sub': 'Kira-kira seminit. Setiap entri disimpan terus ke Google Sheet.',
     'form.ticket': 'Tiket', 'form.auto': 'auto',
-    'f.when': 'Bila', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa',
-    'f.who': 'Siapa', 'f.name': 'Nama pengguna', 'f.dept': 'Jabatan',
-    'f.what': 'Apa', 'f.cat': 'Kategori', 'f.pri': 'Keutamaan', 'f.req': 'Permohonan pengguna',
+    'f.when': 'Bila ia berlaku?', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa',
+    'f.who': 'Siapa yang bertanya?', 'f.name': 'Nama pengguna', 'f.dept': 'Jabatan',
+    'f.what': 'Apa masalahnya?', 'f.cat': 'Kategori', 'f.pri': 'Keutamaan', 'f.req': 'Permohonan pengguna',
     'f.reqhint': 'Terangkan isu atau aktiviti', 'f.photo': 'Bukti gambar (pilihan)',
     'f.capture': 'Ambil gambar', 'f.remove': 'Buang',
-    'f.sig': 'Tandatangan anda', 'f.sighint': 'Tandatangan dengan jari atau tetikus',
-    'f.signhere': '✍ tandatangan di sini', 'f.undo': 'Batal', 'f.clear': 'Padam',
-    'f.submit': 'Hantar entri', 'f.reset': 'Set semula',
-    'cat.hw': 'Perkakasan', 'cat.sw': 'Perisian', 'cat.sys': 'Sistem', 'cat.net': 'Rangkaian', 'cat.acc': 'Akses',
-    'cat.mt': 'Penyelenggaraan', 'cat.ot': 'Lain-lain',
+    'f.sig': 'Tandatangan di sini', 'f.sighint': 'Guna jari anda — contengan pun boleh',
+    'f.signhere': '✍️ lukis tandatangan anda', 'f.undo': 'Batal', 'f.clear': 'Padam',
+    'f.submit': 'Hantar 🚀', 'f.reset': 'Set semula',
+    'cat.hw': 'Perkakasan', 'cat.sw': 'Perisian', 'cat.sys': 'Sistem', 'cat.net': 'Rangkaian',
+    'cat.acc': 'Akses', 'cat.mt': 'Penyelenggaraan', 'cat.ot': 'Lain-lain',
     'pri.low': 'Rendah', 'pri.med': 'Sederhana', 'pri.high': 'Tinggi', 'pri.crit': 'Kritikal',
-    'log.search': 'Cari nama, tiket, permohonan...', 'log.export': 'Eksport CSV', 'log.import': 'Import',
-    'log.empty': 'Tiada entri lagi', 'log.emptysub': 'Entri yang dihantar akan muncul di sini.',
-    's.total': 'Jumlah entri', 's.alltime': 'sepanjang masa', 's.open': 'Terbuka',
-    's.await': 'menunggu tindakan', 's.res': 'Selesai', 's.today': 'Hari ini', 's.logged': 'direkod hari ini',
-    'c.week': 'Entri · 7 hari lepas', 'c.weeksub': 'Bilangan entri setiap hari',
-    'c.dept': 'Mengikut jabatan', 'c.deptsub': 'Entri bagi setiap jabatan',
-    'c.status': 'Taburan status', 'c.statussub': 'Bahagian entri mengikut status semasa',
-    'c.table': 'Jadual data', 'c.tablesub': 'Angka yang sama, dalam teks', 'c.wipe': 'Padam semua',
-    'set.title': 'Penyegerakan Google Sheet',
-    'set.sub': 'Setiap entri disimpan dalam peranti dahulu, kemudian dihantar ke sheet anda. Jika luar talian, ia beratur dan dihantar kemudian.',
-    'set.url': 'URL Apps Script Web App', 'set.save': 'Simpan & uji', 'set.sync': 'Segerak sekarang',
-    'set.open': 'Buka sheet ↗', 'set.notset': 'Belum disediakan — entri kekal dalam peranti ini sahaja.',
-    'set.how': 'Cara sambung (sekali sahaja, ~3 minit)',
-    'set.s1': 'Buka sheet anda, kemudian Extensions → Apps Script.',
-    'set.s2': 'Padam kod contoh, tampal semua kandungan apps-script/Code.gs, dan Simpan.',
-    'set.s3': 'Klik Deploy → New deployment → Web app. Execute as Me, access Anyone. Benarkan bila diminta.',
-    'set.s4': 'Salin URL /exec, tampal di kotak atas, tekan Simpan & uji. Baris ujian akan muncul dalam sheet.',
-    'set.note': 'Akses "Anyone" bermaksud sesiapa dengan URL boleh hantar baris. Rahsiakan URL, atau tetapkan SECRET.',
-    'set.secret': 'Kata rahsia (pilihan)'
+    'log.search': 'Cari nama, tiket, permohonan...', 'log.export': 'Eksport CSV',
+    'log.dates': 'Tarikh', 'log.today': 'Hari ini', 'log.anydate': 'Semua tarikh',
+    'log.empty': 'Tiada entri lagi ✨', 'log.emptysub': 'Entri akan muncul di sini sebaik dihantar.'
   }
 };
 function applyLang() {
-  const d = I18N[cfg.lang] || {};
+  const d = I18N[lang] || {};
   $$('[data-i18n]').forEach(el => { const t = d[el.dataset.i18n]; if (t) el.textContent = t; });
   $$('[data-i18n-ph]').forEach(el => { const t = d[el.dataset.i18nPh]; if (t) el.placeholder = t; });
-  $('#lang-label').textContent = cfg.lang.toUpperCase();
-  document.documentElement.lang = cfg.lang;
+  $('#lang-label').textContent = lang.toUpperCase();
+  document.documentElement.lang = lang;
 }
 
 /* ── toast ─────────────────────────────────────────────────────────── */
-function toast(msg, kind = 'ok', ms = 3200) {
+function toast(msg, kind = 'ok', ms = 3600) {
   const el = document.createElement('div');
   el.className = `toast toast-${kind}`;
-  el.innerHTML = `<span>${kind === 'ok' ? '✅' : kind === 'err' ? '⚠️' : 'ℹ️'}</span><span>${msg}</span>`;
+  el.innerHTML = `<span>${kind === 'ok' ? '✅' : '⚠️'}</span><span>${esc(msg)}</span>`;
   $('#toast-wrap').append(el);
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 240); }, ms);
 }
-const buzz = (p = 12) => navigator.vibrate && navigator.vibrate(p);
+const buzz = p => navigator.vibrate && navigator.vibrate(p || 12);
 
-/* A short confetti burst — the one moment in the app worth celebrating. */
 function celebrate() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const cv = $('#confetti'), ctx = cv.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = $('#confetti'), ctx = cv.getContext('2d'), dpr = devicePixelRatio || 1;
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
   const colors = ['#5b53e8', '#ff7a59', '#16b98a', '#eda100', '#2a78d6'];
   const bits = [...Array(70)].map(() => ({
-    x: innerWidth / 2 + (Math.random() - .5) * 120,
-    y: innerHeight * .62,
-    vx: (Math.random() - .5) * 11,
-    vy: -Math.random() * 15 - 6,
-    r: Math.random() * 5 + 3,
-    spin: (Math.random() - .5) * .3,
-    a: Math.random() * Math.PI,
-    c: colors[(Math.random() * colors.length) | 0]
+    x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .62,
+    vx: (Math.random() - .5) * 11, vy: -Math.random() * 15 - 6,
+    r: Math.random() * 5 + 3, spin: (Math.random() - .5) * .3,
+    a: Math.random() * Math.PI, c: colors[(Math.random() * colors.length) | 0]
   }));
-
-  let frames = 0;
+  let n = 0;
   (function tick() {
     ctx.clearRect(0, 0, innerWidth, innerHeight);
     bits.forEach(b => {
       b.vy += .42; b.x += b.vx; b.y += b.vy; b.a += b.spin; b.vx *= .99;
       ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a);
-      ctx.fillStyle = b.c; ctx.globalAlpha = Math.max(0, 1 - frames / 90);
+      ctx.fillStyle = b.c; ctx.globalAlpha = Math.max(0, 1 - n / 90);
       ctx.fillRect(-b.r, -b.r * .6, b.r * 2, b.r * 1.2);
       ctx.restore();
     });
-    if (++frames < 90) requestAnimationFrame(tick);
-    else ctx.clearRect(0, 0, innerWidth, innerHeight);
+    if (++n < 90) requestAnimationFrame(tick); else ctx.clearRect(0, 0, innerWidth, innerHeight);
   })();
 }
 
-/* ── theme ─────────────────────────────────────────────────────────── */
+/* ── theme / language (session only) ───────────────────────────────── */
 function applyTheme() {
-  document.documentElement.classList.toggle('dark', cfg.theme === 'dark');
+  document.documentElement.classList.toggle('dark', theme === 'dark');
   const meta = $('meta[name="theme-color"]');
-  if (meta) meta.content = cfg.theme === 'dark' ? '#17161c' : '#faf7f4';
+  if (meta) meta.content = theme === 'dark' ? '#17161c' : '#faf7f4';
 }
+$('#btn-theme').addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); buzz(); });
+$('#btn-lang').addEventListener('click', () => {
+  lang = lang === 'en' ? 'ms' : 'en'; buzz();
+  if (lang === 'en') location.reload(); else applyLang();
+});
 
 /* ── routing ───────────────────────────────────────────────────────── */
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('hidden', v.id !== 'view-' + view));
   $$('[data-view]').forEach(b => b.classList.toggle('is-on', b.dataset.view === view));
-  if (view === 'log') { renderLog(); refreshIfStale(); }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (view === 'log') loadRows();
+  scrollTo({ top: 0, behavior: 'smooth' });
 }
 $$('[data-view]').forEach(b => b.addEventListener('click', () => { show(b.dataset.view); buzz(); }));
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 const pad = n => String(n).padStart(2, '0');
-const todayISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-const STATUS = [
-  { key: 'Open',        css: 'st-open',        color: 'var(--c-yellow)' },
-  { key: 'In Progress', css: 'st-in-progress', color: 'var(--c-blue)' },
-  { key: 'Resolved',    css: 'st-resolved',    color: 'var(--c-aqua)' }
-];
-const statusMeta = k => STATUS.find(s => s.key === k) || STATUS[0];
+const ST_CLASS  = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resolved': 'st-resolved' };
 
+/** Ticket numbers come from the sheet, so two phones never mint the same one. */
 function nextTicket() {
-  const d = new Date();
-  const day = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-  const n = entries.filter(e => e.ticket && e.ticket.includes(day)).length + 1;
-  return `LOG-${day}-${pad(n).padStart(3, '0')}`;
+  const day = isoOf(new Date()).replace(/-/g, '');
+  const n = rows.filter(r => r.ticket && r.ticket.indexOf(day) !== -1).length + 1;
+  return `LOG-${day}-${String(n).padStart(3, '0')}`;
 }
+
+/* ── the sheet ─────────────────────────────────────────────────────── */
+async function callSheet(payload) {
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+    redirect: 'follow'
+  });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { throw new Error('Unexpected reply from the sheet'); }
+  if (!data.ok) throw new Error(data.error || 'Rejected by the sheet');
+  return data;
+}
+
+let loading = false;
+async function loadRows(loud) {
+  if (loading) return;
+  loading = true;
+  const icon = $('#btn-sync svg'); icon.classList.add('spin');
+  try {
+    const data = await callSheet({ action: 'list' });
+    rows = (data.rows || []).slice().reverse();          // newest first
+    $('#tab-count').textContent = rows.length;
+    renderLog();
+    $('#ticket-id').textContent = nextTicket();
+    if (loud) toast(`Loaded ${rows.length} entries.`);
+  } catch (err) {
+    renderLog();
+    toast('Cannot reach the sheet: ' + err.message, 'err', 5000);
+  } finally {
+    loading = false; icon.classList.remove('spin');
+  }
+}
+$('#btn-sync').addEventListener('click', () => loadRows(true));
+addEventListener('online', () => { $('#net-state').textContent = 'online'; loadRows(); });
+addEventListener('offline', () => { $('#net-state').textContent = 'offline'; });
 
 /* ══ FORM ═════════════════════════════════════════════════════════════ */
 const form = $('#entry-form');
@@ -177,7 +165,7 @@ let category = '', priority = 'Medium', photoData = '';
 
 function stampNow() {
   const d = new Date();
-  form.date.value = todayISO(d);
+  form.date.value = isoOf(d);
   form.time.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   updateProgress();
 }
@@ -193,45 +181,32 @@ $('#pri-group').addEventListener('click', e => {
   $$('#pri-group button').forEach(c => c.classList.toggle('is-on', c === b));
   priority = b.dataset.pri; buzz();
 });
-
-form.request.addEventListener('input', () => {
-  $('#char-count').textContent = form.request.value.length;
-  updateProgress();
-});
+form.request.addEventListener('input', () => { $('#char-count').textContent = form.request.value.length; updateProgress(); });
 form.addEventListener('input', updateProgress);
 
 function updateProgress() {
-  const checks = [
-    !!form.date.value, !!form.time.value, !!form.name.value.trim(),
-    !!form.department.value, !!category, form.request.value.trim().length > 3, hasInk()
-  ];
+  const checks = [!!form.date.value, !!form.time.value, !!form.name.value.trim(),
+                  !!form.department.value, !!category, form.request.value.trim().length > 3, hasInk()];
   const pct = Math.round(checks.filter(Boolean).length / checks.length * 100);
   const ring = $('#ring');
   if (ring) { ring.style.setProperty('--p', pct); $('#ring-val').textContent = pct + '%'; }
 }
 
-/* ── photo ─────────────────────────────────────────────────────────────
-   A phone camera shot is several megabytes; it has to come down to something
-   that fits in a single spreadsheet cell (50,000 characters), otherwise the
-   photo can be written to the sheet but never read back on another device.
-   Step the size and quality down until it fits. */
+/* ── photo: stepped down until it fits one spreadsheet cell ────────── */
 const CELL_CHARS = 45000;
-
 function encodeToFit(img, maxChars) {
   const steps = [[900, .7], [760, .62], [640, .55], [520, .5], [420, .45], [340, .4]];
   let out = '';
   for (const [max, q] of steps) {
     const scale = Math.min(1, max / Math.max(img.width, img.height));
     const c = document.createElement('canvas');
-    c.width = Math.round(img.width * scale);
-    c.height = Math.round(img.height * scale);
+    c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     out = c.toDataURL('image/jpeg', q);
     if (out.length <= maxChars) return out;
   }
-  return out;                                   // smallest we can do; still stored locally
+  return out;
 }
-
 $('#photo-input').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const img = new Image();
@@ -240,10 +215,8 @@ $('#photo-input').addEventListener('change', e => {
     $('#photo-preview').src = photoData;
     $('#photo-wrap').classList.replace('hidden', 'flex');
     URL.revokeObjectURL(img.src);
-    toast(photoData.length <= CELL_CHARS
-      ? 'Photo attached.'
-      : 'Photo attached — too large for the sheet, kept on this device.', 
-      photoData.length <= CELL_CHARS ? 'ok' : 'err');
+    toast(photoData.length <= CELL_CHARS ? 'Photo attached.'
+      : 'Photo is very large — it may not reach the sheet.', photoData.length <= CELL_CHARS ? 'ok' : 'err');
   };
   img.src = URL.createObjectURL(file);
 });
@@ -257,7 +230,7 @@ const pad2 = $('#sig-pad'), pctx = pad2.getContext('2d');
 let strokes = [], current = null, inkColor = '#141414', drawing = false;
 
 function fitPad() {
-  const r = pad2.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const r = pad2.getBoundingClientRect(), dpr = devicePixelRatio || 1;
   pad2.width = Math.round(r.width * dpr); pad2.height = Math.round(r.height * dpr);
   pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   redrawPad();
@@ -280,10 +253,7 @@ pad2.addEventListener('pointerdown', e => {
   current = { color: inkColor, width: e.pointerType === 'pen' ? 1.8 : 2.4, pts: [posOf(e)] };
   strokes.push(current); redrawPad(); buzz(6);
 });
-pad2.addEventListener('pointermove', e => {
-  if (!drawing) return;
-  e.preventDefault(); current.pts.push(posOf(e)); redrawPad();
-});
+pad2.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); current.pts.push(posOf(e)); redrawPad(); });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
   pad2.addEventListener(ev, () => { if (drawing) { drawing = false; current = null; updateProgress(); } }));
 
@@ -294,27 +264,19 @@ $('#ink-group').addEventListener('click', e => {
 });
 $('#sig-undo').addEventListener('click', () => { strokes.pop(); redrawPad(); updateProgress(); buzz(); });
 $('#sig-clear').addEventListener('click', () => { strokes = []; redrawPad(); updateProgress(); buzz(); });
-window.addEventListener('resize', fitPad);
+addEventListener('resize', fitPad);
 
-/**
- * Flatten the pad to an opaque white PNG.
- * Cropped to what was actually drawn and capped at MAX_W wide, because this
- * data URL has to fit inside one spreadsheet cell (50,000 characters) for the
- * signature to be readable back on other devices.
- */
+/** Cropped, capped PNG — small enough to live in one spreadsheet cell. */
 function signaturePNG() {
   if (!strokes.length) return '';
   const MAX_W = 420, PAD = 10;
-
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const st of strokes) for (const p of st.pts) {
     if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
     if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
   }
   x0 -= PAD; y0 -= PAD; x1 += PAD; y1 += PAD;
-  const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
-  const scale = Math.min(2, MAX_W / w);
-
+  const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0), scale = Math.min(2, MAX_W / w);
   const c = document.createElement('canvas');
   c.width = Math.round(w * scale); c.height = Math.round(h * scale);
   const x = c.getContext('2d');
@@ -322,26 +284,26 @@ function signaturePNG() {
   x.scale(scale, scale); x.translate(-x0, -y0);
   x.lineCap = 'round'; x.lineJoin = 'round';
   for (const st of strokes) {
-    x.strokeStyle = st.color;              // the pad is white too, so what you
-                                           // signed is exactly what gets saved
-    x.lineWidth = st.width; x.beginPath();
+    x.strokeStyle = st.color; x.lineWidth = st.width; x.beginPath();
     st.pts.forEach((p, i) => i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y));
     x.stroke();
   }
   return c.toDataURL('image/png');
 }
 
-/* ── submit ────────────────────────────────────────────────────────── */
-function markBad(el, bad) { el.classList.toggle('is-bad', bad); }
+/* ── submit: nothing is kept locally, so the sheet must confirm ────── */
+const markBad = (el, bad) => el.classList.toggle('is-bad', bad);
 
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async e => {
   e.preventDefault();
   const fields = [form.date, form.time, form.name, form.department, form.request];
   let bad = null;
   fields.forEach(f => { const empty = !f.value.trim(); markBad(f, empty); if (empty && !bad) bad = f; });
   if (bad) { bad.focus(); bad.scrollIntoView({ block: 'center', behavior: 'smooth' }); return toast('Please complete the required fields.', 'err'); }
-  if (!category) { show('new'); return toast('Pick a category.', 'err'); }
+  if (!category) return toast('Pick a category.', 'err');
   if (!hasInk()) { $('.sig-wrap').scrollIntoView({ block: 'center', behavior: 'smooth' }); return toast('Signature is required.', 'err'); }
+
+  if (!navigator.onLine) return toast('You are offline. The entry needs a connection to save.', 'err', 5000);
 
   const entry = {
     id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -349,20 +311,26 @@ form.addEventListener('submit', e => {
     date: form.date.value, time: form.time.value,
     name: form.name.value.trim(), department: form.department.value,
     category, priority, request: form.request.value.trim(),
-    status: 'Open',
-    signature: signaturePNG(), photo: photoData,
-    device: cfg.device, created: new Date().toISOString(),
-    synced: false
+    status: 'Open', signature: signaturePNG(), photo: photoData,
+    device: navigator.platform || 'web', created: new Date().toISOString()
   };
 
-  entries.unshift(entry);
-  saveEntries();
-  buzz([18, 40, 18]);
-  celebrate();
-  toast(`Nice one! Saved · ${entry.ticket}`);
-  resetForm();
-  refreshCounts();
-  pushEntry(entry, false);
+  const btn = $('#btn-submit'), label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span>Saving to the sheet…</span>';
+  try {
+    await callSheet({ action: 'append', entry });
+    rows.unshift(entry);
+    $('#tab-count').textContent = rows.length;
+    buzz([18, 40, 18]); celebrate();
+    toast(`Saved to the sheet · ${entry.ticket}`);
+    resetForm();
+    renderLog();
+  } catch (err) {
+    // The form is deliberately left as it is so nothing typed is lost.
+    toast('Not saved: ' + err.message + ' — try again.', 'err', 6000);
+  } finally {
+    btn.disabled = false; btn.innerHTML = label;
+  }
 });
 
 $('#btn-reset').addEventListener('click', () => { resetForm(); toast('Form cleared.'); });
@@ -381,100 +349,27 @@ function resetForm() {
   updateProgress();
 }
 
-/* ══ GOOGLE SHEET SYNC ════════════════════════════════════════════════
-   Apps Script web apps do not answer CORS preflight, so the body goes as
-   text/plain — that keeps it a "simple request" and no preflight is sent. */
-const pendingCount = () => entries.filter(e => !e.synced).length;
-
-function refreshCounts() {
-  $('#tab-count').textContent = entries.length;
-  const n = pendingCount(), badge = $('#sync-badge');
-  badge.textContent = n;
-  badge.classList.toggle('hidden', n === 0);
-  renderLog();
-}
-
-async function callSheet(payload) {
-  if (!cfg.endpoint) throw new Error('No endpoint configured');
-  const res = await fetch(cfg.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ secret: cfg.secret || '' }, payload)),
-    redirect: 'follow'
-  });
-  const text = await res.text();
-  let data; try { data = JSON.parse(text); } catch { throw new Error('Unexpected reply from Apps Script'); }
-  if (!data.ok) throw new Error(data.error || 'Rejected by Apps Script');
-  return data;
-}
-
-async function pushEntry(entry, quiet = true) {
-  if (!cfg.endpoint) { if (!quiet) toast('Saved on device — no sheet connected yet.', 'err'); return false; }
-  if (!navigator.onLine) { if (!quiet) toast('Saved on device — offline, queued for the sheet.', 'err'); return false; }
-  try {
-    await callSheet({ action: 'append', entry });
-    entry.synced = true; saveEntries(); refreshCounts();
-    if (!quiet) toast('Row written to the Google Sheet.');
-    return true;
-  } catch (err) {
-    if (!quiet) toast('Sheet: ' + err.message, 'err', 5000);
-    return false;
-  }
-}
-
-let lastSync = 0;
-
-/** Fetch rows from the sheet and merge in anything this device has not seen. */
-async function pullRows() {
-  const { rows } = await callSheet({ action: 'list' });
-  let added = 0;
-  (rows || []).forEach(r => {
-    if (r.id && !entries.some(e => e.id === r.id)) { entries.push(Object.assign(r, { synced: true })); added++; }
-  });
-  if (added) { entries.sort((a, b) => (b.created || '').localeCompare(a.created || '')); saveEntries(); }
-  lastSync = Date.now();
-  return added;
-}
-
-/** Pull quietly when the log book is opened and the last pull is stale. */
-function refreshIfStale() {
-  if (!cfg.endpoint || !navigator.onLine || Date.now() - lastSync < 45000) return;
-  pullRows().then(n => { if (n) refreshCounts(); }).catch(() => {});
-}
-
-async function syncAll(loud = true) {
-  if (!cfg.endpoint) return toast('No sheet endpoint configured.', 'err');
-  if (!navigator.onLine) return toast('Offline — will sync when back online.', 'err');
-  const queue = entries.filter(e => !e.synced);
-  const icon = $('#btn-sync svg'); icon.classList.add('spin');
-  let ok = 0, fail = 0;
-  for (const e of queue) { (await pushEntry(e)) ? ok++ : fail++; }
-  try {
-    const added = await pullRows();
-    if (loud) toast(`Synced · ${ok} sent, ${added} pulled${fail ? `, ${fail} failed` : ''}`, fail ? 'err' : 'ok');
-  } catch (err) {
-    if (loud) toast('Sync: ' + err.message, 'err', 5000);
-  }
-  icon.classList.remove('spin');
-  refreshCounts();
-}
-
-$('#btn-sync').addEventListener('click', () => syncAll(true));
-
-window.addEventListener('online',  () => { $('#net-state').textContent = 'online'; syncAll(false); });
-window.addEventListener('offline', () => { $('#net-state').textContent = 'offline'; });
-
 /* ══ LOG BOOK ═════════════════════════════════════════════════════════ */
 const search = $('#search');
-[search, $('#f-status'), $('#f-dept'), $('#f-sort')].forEach(el => el.addEventListener('input', renderLog));
+[search, $('#f-status'), $('#f-dept'), $('#f-sort'), $('#f-from'), $('#f-to')]
+  .forEach(el => el.addEventListener('input', renderLog));
 
-function visibleEntries() {
+$('#btn-today').addEventListener('click', () => {
+  const t = isoOf(new Date());
+  $('#f-from').value = t; $('#f-to').value = t; renderLog(); buzz();
+});
+$('#btn-dates-clear').addEventListener('click', () => {
+  $('#f-from').value = ''; $('#f-to').value = ''; renderLog(); buzz();
+});
+
+function visibleRows() {
   const q = search.value.trim().toLowerCase();
   const st = $('#f-status').value, dp = $('#f-dept').value, sort = $('#f-sort').value;
-  let list = entries.filter(e =>
-    (!st || e.status === st) && (!dp || e.department === dp) &&
-    (!q || [e.name, e.ticket, e.request, e.department, e.category].join(' ').toLowerCase().includes(q))
-  );
+  const from = $('#f-from').value, to = $('#f-to').value;   // yyyy-mm-dd sorts as text
+  let list = rows.filter(r =>
+    (!st || r.status === st) && (!dp || r.department === dp) &&
+    (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)) &&
+    (!q || [r.name, r.ticket, r.request, r.department, r.category].join(' ').toLowerCase().includes(q)));
   if (sort === 'old') list = [...list].reverse();
   if (sort === 'pri') list = [...list].sort((a, b) => PRI_RANK[a.priority] - PRI_RANK[b.priority]);
   return list;
@@ -482,156 +377,108 @@ function visibleEntries() {
 
 function renderLog() {
   const dpSel = $('#f-dept'), keep = dpSel.value;
-  const depts = [...new Set(entries.map(e => e.department).filter(Boolean))].sort();
-  dpSel.innerHTML = '<option value="">All departments</option>' + depts.map(d => `<option${d === keep ? ' selected' : ''}>${esc(d)}</option>`).join('');
+  const depts = [...new Set(rows.map(r => r.department).filter(Boolean))].sort();
+  dpSel.innerHTML = '<option value="">All departments</option>' +
+    depts.map(d => `<option${d === keep ? ' selected' : ''}>${esc(d)}</option>`).join('');
 
-  const list = visibleEntries();
+  const list = visibleRows();
   $('#log-empty').classList.toggle('hidden', list.length > 0);
-  $('#log-list').innerHTML = list.map((e, i) => {
-    const sm = statusMeta(e.status);
-    return `
-    <article class="entry" data-id="${e.id}" style="--pri-c:${PRI_COLOR[e.priority] || 'var(--c-blue)'};animation-delay:${Math.min(i * 35, 280)}ms">
+  $('#log-list').innerHTML = list.map((r, i) => `
+    <article class="entry" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 30, 260)}ms">
       <div class="flex items-start gap-3">
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-[11px] font-semibold text-neon">${esc(e.ticket)}</span>
-            <span class="pill ${sm.css}"><span class="pill-dot"></span>${esc(e.status)}</span>
-            <span class="text-[11px] text-muted">${esc(e.priority)}</span>
-            ${e.synced
-              ? '<span class="text-[11px] text-muted" title="In Google Sheet">☁ synced</span>'
-              : '<span class="text-[11px] text-amber-400" title="Not yet in the sheet">⏳ queued</span>'}
+            <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
+            <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
+            <span class="text-[11px] text-muted">${esc(r.priority)}</span>
           </div>
-          <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(e.name)} <span class="text-muted">· ${esc(e.department)}</span></h4>
-          <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(e.request)}</p>
-          <p class="mt-2 font-mono text-[11px] text-muted">${esc(e.date)} · ${esc(e.time)} · ${esc(e.category)}</p>
+          <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
+          <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
+          <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)} · ${esc(r.category)}</p>
         </div>
-        ${e.signature ? `<img src="${e.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
+        ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
       </div>
-    </article>`;
-  }).join('');
+    </article>`).join('');
 }
 
 $('#log-list').addEventListener('click', e => {
-  const card = e.target.closest('.entry'); if (!card) return;
-  openDetail(card.dataset.id);
+  const card = e.target.closest('.entry'); if (card) openDetail(card.dataset.id);
 });
 
-/* ── detail modal ──────────────────────────────────────────────────── */
+/* ── detail (read only) ────────────────────────────────────────────── */
 const modal = $('#modal');
 function openDetail(id) {
-  const e = entries.find(x => x.id === id); if (!e) return;
-  const sm = statusMeta(e.status);
+  const r = rows.find(x => x.id === id); if (!r) return;
   $('#modal-card').innerHTML = `
     <div class="mb-4 flex items-start justify-between gap-3">
       <div>
-        <p class="font-mono text-[11px] font-semibold text-neon">${esc(e.ticket)}</p>
-        <h3 class="mt-1 font-display text-xl font-bold">${esc(e.name)}</h3>
-        <p class="text-[12px] text-muted">${esc(e.department)} · ${esc(e.date)} ${esc(e.time)}</p>
+        <p class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</p>
+        <h3 class="mt-1 font-display text-xl font-bold">${esc(r.name)}</h3>
+        <p class="text-[12px] text-muted">${esc(r.department)} · ${esc(r.date)} ${esc(r.time)}</p>
       </div>
       <button data-act="close" class="icon-btn">✕</button>
     </div>
-
     <div class="mb-4 flex flex-wrap gap-2">
-      <span class="pill ${sm.css}"><span class="pill-dot"></span>${esc(e.status)}</span>
-      <span class="chip">${esc(e.category)}</span>
-      <span class="chip" style="border-color:${PRI_COLOR[e.priority]};color:${PRI_COLOR[e.priority]}">${esc(e.priority)}</span>
-      <span class="chip">${e.synced ? '☁ in sheet' : '⏳ queued'}</span>
+      <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
+      <span class="chip">${esc(r.category)}</span>
+      <span class="chip" style="border-color:${PRI_COLOR[r.priority]};color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
     </div>
-
-    <p class="whitespace-pre-wrap rounded-xl border border-line bg-panel/60 p-3 text-[13px] leading-relaxed">${esc(e.request)}</p>
-
-    ${e.photo ? `<img src="${e.photo}" alt="attached photo" class="mt-3 w-full rounded-xl border border-line object-cover" />` : ''}
-    ${e.signature ? `<div class="mt-3"><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Signature</p><img src="${e.signature}" alt="signature" class="w-full rounded-xl border border-line bg-white" /></div>` : ''}
-
+    <p class="whitespace-pre-wrap rounded-xl border border-line bg-panel/60 p-3 text-[13px] leading-relaxed">${esc(r.request)}</p>
+    ${r.photo ? `<img src="${r.photo}" alt="attached photo" class="mt-3 w-full rounded-xl border border-line object-cover" />` : ''}
+    ${r.signature ? `<div class="mt-3"><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Signature</p><img src="${r.signature}" alt="signature" class="w-full rounded-xl border border-line bg-white" /></div>` : ''}
     <div class="mt-5 flex flex-wrap gap-2">
       <button data-act="share" class="chip chip-ghost">Share</button>
       <button data-act="print" class="chip chip-ghost">Print</button>
-      ${e.synced ? '' : '<button data-act="push" class="chip chip-ghost">Send to sheet</button>'}
     </div>
     <p class="mt-3 text-[11px] text-muted">Entries cannot be changed here — a log book is a record. Ask an admin to edit or remove one.</p>`;
   modal.classList.add('is-open');
   modal.dataset.id = id;
 }
-function closeModal() { modal.classList.remove('is-open'); }
+const closeModal = () => modal.classList.remove('is-open');
 
 modal.addEventListener('click', async ev => {
   if (ev.target === modal) return closeModal();
   const b = ev.target.closest('[data-act]'); if (!b) return;
-  const id = modal.dataset.id, e = entries.find(x => x.id === id);
-  const act = b.dataset.act;
-
-  if (act === 'close') closeModal();
-  if (act === 'push') { (await pushEntry(e, false)) && openDetail(id); }
-  if (act === 'share') {
-    const text = `${e.ticket}\n${e.date} ${e.time}\n${e.name} · ${e.department}\n${e.priority} · ${e.category} · ${e.status}\n\n${e.request}`;
-    if (navigator.share) { try { await navigator.share({ title: e.ticket, text }); } catch {} }
+  const r = rows.find(x => x.id === modal.dataset.id);
+  if (b.dataset.act === 'close') closeModal();
+  if (b.dataset.act === 'print') print();
+  if (b.dataset.act === 'share' && r) {
+    const text = `${r.ticket}\n${r.date} ${r.time}\n${r.name} · ${r.department}\n${r.priority} · ${r.category} · ${r.status}\n\n${r.request}`;
+    if (navigator.share) { try { await navigator.share({ title: r.ticket, text }); } catch {} }
     else { await navigator.clipboard.writeText(text); toast('Entry copied to clipboard.'); }
   }
-  if (act === 'print') window.print();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-/* ── export / import ───────────────────────────────────────────────── */
+/* ── export (of what is on screen; the sheet stays the record) ─────── */
 $('#btn-export').addEventListener('click', () => {
-  if (!entries.length) return toast('Nothing to export.', 'err');
+  if (!rows.length) return toast('Nothing to export.', 'err');
   const cols = ['ticket', 'date', 'time', 'name', 'department', 'category', 'priority', 'status', 'request', 'created'];
-  const csv = [cols.join(',')].concat(
-    entries.map(e => cols.map(c => `"${String(e[c] ?? '').replace(/"/g, '""')}"`).join(','))
-  ).join('\r\n');
-  download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `ksl-logbook-${todayISO(new Date())}.csv`);
-  setTimeout(() => download(new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' }), `ksl-logbook-${todayISO(new Date())}.json`), 600);
-  toast('Exported CSV + JSON backup.');
-});
-
-function download(blob, name) {
+  const csv = [cols.join(',')].concat(rows.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name;
+  a.href = URL.createObjectURL(blob); a.download = `ksl-logbook-${isoOf(new Date())}.csv`;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Exported CSV.');
+});
+
+/* ── no service worker, no cached copies ───────────────────────────── */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(rs => rs.forEach(r => r.unregister()))
+    .catch(() => {});
 }
-
-$('#import-input').addEventListener('change', ev => {
-  const f = ev.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const rows = JSON.parse(r.result);
-      if (!Array.isArray(rows)) throw new Error('bad file');
-      let added = 0;
-      rows.forEach(x => { if (x.id && !entries.some(e => e.id === x.id)) { entries.push(x); added++; } });
-      entries.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
-      saveEntries(); refreshCounts(); toast(`Imported ${added} entries.`);
-    } catch { toast('That file could not be read.', 'err'); }
-    ev.target.value = '';
-  };
-  r.readAsText(f);
-});
-
-/* ══ CHROME ═══════════════════════════════════════════════════════════ */
-$('#btn-theme').addEventListener('click', () => { cfg.theme = cfg.theme === 'dark' ? 'light' : 'dark'; saveCfg(); applyTheme(); buzz(); });
-$('#btn-lang').addEventListener('click', () => {
-  cfg.lang = cfg.lang === 'en' ? 'ms' : 'en'; saveCfg();
-  if (cfg.lang === 'en') location.reload(); else applyLang();
-});
-
-setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString(); }, 1000);
-
-let installEvent = null;
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; $('#btn-install').classList.remove('hidden'); });
-$('#btn-install').addEventListener('click', async () => { if (!installEvent) return; installEvent.prompt(); installEvent = null; $('#btn-install').classList.add('hidden'); });
-
-if ('serviceWorker' in navigator && location.protocol.startsWith('http'))
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
 
 /* ── boot ──────────────────────────────────────────────────────────── */
+setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString(); }, 1000);
 applyTheme();
 applyLang();
 fitPad();
 stampNow();
-$('#ticket-id').textContent = nextTicket();
 $('#net-state').textContent = navigator.onLine ? 'online' : 'offline';
 show('new');
-refreshCounts();
 updateProgress();
-if (cfg.endpoint && navigator.onLine) syncAll(false);   // pull the log too, not only push
+loadRows();
 })();

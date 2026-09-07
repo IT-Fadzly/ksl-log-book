@@ -7,8 +7,6 @@
 'use strict';
 
 const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzA9VCYE6btfC8hlbblRBepxCfendnU-oi8olLrE3VSbNlfnTPuTeqgd2KrCTWCZRjJTg/exec';
-const KEY_STORE = 'ksl_admin_key';
-const DB_KEY = 'ksl_logbook_v1';           // the app's local copy, kept in step
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -49,25 +47,12 @@ async function call(payload, retried) {
   if (!data.ok && /admin key/i.test(data.error || '') && !retried) {
     const entered = prompt('This sheet is protected. Enter the admin key:', adminKey || '');
     if (entered === null) throw new Error('Cancelled');
-    adminKey = entered.trim();
-    localStorage.setItem(KEY_STORE, adminKey);
+    adminKey = entered.trim();               // kept in memory only, never stored
     return call(payload, true);
   }
 
   if (!data.ok) throw new Error(data.error || 'Rejected');
   return data;
-}
-
-/* Keep the browser's own copy of the log book in step with an admin change,
-   so this device does not show a stale row after an edit or delete. */
-function patchLocal(id, updated) {
-  try {
-    const local = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
-    const next = updated
-      ? local.map(e => e.id === id ? Object.assign({}, e, updated) : e)
-      : local.filter(e => e.id !== id);
-    localStorage.setItem(DB_KEY, JSON.stringify(next));
-  } catch {}
 }
 
 /* ── load + render ─────────────────────────────────────────────────── */
@@ -157,8 +142,10 @@ function renderStats() {
 function visible() {
   const q = $('#search').value.trim().toLowerCase();
   const st = $('#f-status').value, dp = $('#f-dept').value;
+  const from = $('#f-from').value, to = $('#f-to').value;   // yyyy-mm-dd sorts as text
   return rows.filter(r =>
     (!st || r.status === st) && (!dp || r.department === dp) &&
+    (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)) &&
     (!q || [r.ticket, r.name, r.department, r.request, r.category].join(' ').toLowerCase().includes(q))
   );
 }
@@ -188,7 +175,15 @@ function render() {
     </article>`).join('');
 }
 
-[$('#search'), $('#f-status'), $('#f-dept')].forEach(el => el.addEventListener('input', render));
+[$('#search'), $('#f-status'), $('#f-dept'), $('#f-from'), $('#f-to')]
+  .forEach(el => el.addEventListener('input', render));
+$('#btn-today').addEventListener('click', () => {
+  const t = isoOf(new Date());
+  $('#f-from').value = t; $('#f-to').value = t; render();
+});
+$('#btn-dates-clear').addEventListener('click', () => {
+  $('#f-from').value = ''; $('#f-to').value = ''; render();
+});
 $('#btn-reload').addEventListener('click', load);
 
 /* ── edit + delete ─────────────────────────────────────────────────── */
@@ -201,7 +196,6 @@ $('#list').addEventListener('click', async e => {
   b.disabled = true;
   try {
     await call({ action: 'delete', id: row.id });
-    patchLocal(row.id, null);
     rows = rows.filter(r => r.id !== row.id);
     $('#count').textContent = rows.length;
     render();
@@ -267,7 +261,6 @@ function openEdit(r) {
       // send the whole row back, minus the images: the script keeps those
       await call({ action: 'update', entry: Object.assign({}, r, patch, { signature: '', photo: '' }) });
       Object.assign(r, patch);
-      patchLocal(r.id, patch);
       render(); closeModal();
       toast(`Saved ${r.ticket}`);
     } catch (err) {
@@ -284,6 +277,5 @@ $('#modal').addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* ── boot ──────────────────────────────────────────────────────────── */
-adminKey = localStorage.getItem(KEY_STORE) || '';
 load();
 })();

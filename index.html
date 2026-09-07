@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#faf7f4" />
+<meta http-equiv="Cache-Control" content="no-store" />
 <meta name="description" content="KSL Digital Log Book - futuristic service request and activity log with e-signature, offline queue and Google Sheets sync." />
 <title>KSL · Digital Log Book</title>
-<link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="assets/icon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -39,14 +39,7 @@ tailwind.config = {
   }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css" />
-<script>
-  /* set the saved theme before first paint so the page never flashes */
-  try {
-    var c = JSON.parse(localStorage.getItem('ksl_config_v1') || '{}');
-    if (c.theme === 'dark') document.documentElement.classList.add('dark');
-  } catch (e) {}
-</script>
+<link rel="stylesheet" href="assets/css/style.css?v=8" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -69,9 +62,8 @@ tailwind.config = {
       <p class="truncate text-[11px] text-muted"><span id="clock" class="font-mono">--:--:--</span> · <span id="net-state">online</span></p>
     </div>
 
-    <button id="btn-sync" class="icon-btn relative" title="Sync to Google Sheet" aria-label="Sync to Google Sheet">
+    <button id="btn-sync" class="icon-btn" title="Reload from the sheet" aria-label="Reload from the sheet">
       <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg>
-      <span id="sync-badge" class="hidden absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 font-mono text-[9px] font-bold text-slate-950">0</span>
     </button>
     <button id="btn-lang" class="icon-btn" title="Bahasa / English" aria-label="Toggle language">
       <span class="font-mono text-[11px] font-semibold" id="lang-label">EN</span>
@@ -253,10 +245,15 @@ tailwind.config = {
         <select id="f-status" class="mini-select"><option value="">All status</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Resolved">Resolved</option></select>
         <select id="f-dept" class="mini-select"><option value="">All departments</option></select>
         <select id="f-sort" class="mini-select"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="pri">By priority</option></select>
-        <div class="ml-auto flex gap-2">
-          <button id="btn-export" class="chip chip-ghost" data-i18n="log.export">Export CSV</button>
-          <label class="chip chip-ghost cursor-pointer"><span data-i18n="log.import">Import</span><input id="import-input" type="file" accept="application/json" class="hidden" /></label>
-        </div>
+        <button id="btn-export" class="chip chip-ghost ml-auto" data-i18n="log.export">Export CSV</button>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <span class="text-[12px] font-medium text-muted" data-i18n="log.dates">Dates</span>
+        <input id="f-from" type="date" class="mini-select !py-1.5" aria-label="From date" />
+        <span class="text-[12px] text-muted">→</span>
+        <input id="f-to" type="date" class="mini-select !py-1.5" aria-label="To date" />
+        <button id="btn-today" class="chip chip-ghost !py-1" data-i18n="log.today">Today</button>
+        <button id="btn-dates-clear" class="chip chip-ghost !py-1" data-i18n="log.anydate">Any date</button>
       </div>
     </div>
 
@@ -292,6 +289,6 @@ tailwind.config = {
 
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-6"></div>
 
-<script src="assets/js/app.js"></script>
+<script src="assets/js/app.js?v=8"></script>
 </body>
 </html>

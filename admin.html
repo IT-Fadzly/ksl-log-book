@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#faf7f4" />
+<meta http-equiv="Cache-Control" content="no-store" />
 <meta name="robots" content="noindex" />
 <title>KSL Log Book · Admin</title>
 <link rel="icon" href="assets/icon.svg" />
@@ -32,13 +33,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css" />
-<script>
-  try {
-    var c = JSON.parse(localStorage.getItem('ksl_config_v1') || '{}');
-    if (c.theme === 'dark') document.documentElement.classList.add('dark');
-  } catch (e) {}
-</script>
+<link rel="stylesheet" href="assets/css/style.css?v=8" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -118,6 +113,14 @@ tailwind.config = {
         <select id="f-dept" class="mini-select"><option value="">All departments</option></select>
         <span id="state" class="ml-auto text-[12px] text-muted"></span>
       </div>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <span class="text-[12px] font-medium text-muted">Dates</span>
+        <input id="f-from" type="date" class="mini-select !py-1.5" aria-label="From date" />
+        <span class="text-[12px] text-muted">→</span>
+        <input id="f-to" type="date" class="mini-select !py-1.5" aria-label="To date" />
+        <button id="btn-today" class="chip chip-ghost !py-1">Today</button>
+        <button id="btn-dates-clear" class="chip chip-ghost !py-1">Any date</button>
+      </div>
     </div>
 
     <div id="list" class="space-y-3"></div>
@@ -135,6 +138,6 @@ tailwind.config = {
 
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"></div>
 
-<script src="assets/js/admin.js"></script>
+<script src="assets/js/admin.js?v=8"></script>
 </body>
 </html>

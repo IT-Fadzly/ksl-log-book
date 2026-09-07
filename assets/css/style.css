@@ -278,6 +278,9 @@ input[type="date"].input, input[type="time"].input { padding-top: 1.3rem; paddin
   background-repeat: no-repeat; background-position: right .7rem center;
 }
 .mini-select:focus { border-color: var(--accent); color: rgb(var(--ink)); }
+/* a date input draws its own picker icon - drop the select chevron */
+input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
+.dark input[type="date"].mini-select::-webkit-calendar-picker-indicator { filter: invert(.8); }
 
 /* ── signature pad ─────────────────────────────────────────────────── */
 .sig-wrap {
