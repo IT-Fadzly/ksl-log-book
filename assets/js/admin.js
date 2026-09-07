@@ -34,7 +34,7 @@ function toast(msg, kind = 'ok', ms = 3200) {
 }
 
 /* ── sheet calls ───────────────────────────────────────────────────── */
-async function call(payload) {
+async function call(payload, retried) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -43,6 +43,17 @@ async function call(payload) {
   });
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { throw new Error('Unexpected reply from Apps Script'); }
+
+  // No key is configured by default. If one ever is, ask for it at the
+  // moment it is needed rather than gating the whole page up front.
+  if (!data.ok && /admin key/i.test(data.error || '') && !retried) {
+    const entered = prompt('This sheet is protected. Enter the admin key:', adminKey || '');
+    if (entered === null) throw new Error('Cancelled');
+    adminKey = entered.trim();
+    localStorage.setItem(KEY_STORE, adminKey);
+    return call(payload, true);
+  }
+
   if (!data.ok) throw new Error(data.error || 'Rejected');
   return data;
 }
@@ -57,23 +68,6 @@ function patchLocal(id, updated) {
       : local.filter(e => e.id !== id);
     localStorage.setItem(DB_KEY, JSON.stringify(next));
   } catch {}
-}
-
-/* ── gate ──────────────────────────────────────────────────────────── */
-$('#btn-unlock').addEventListener('click', unlock);
-$('#admin-key').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
-
-async function unlock() {
-  adminKey = $('#admin-key').value.trim();
-  try {
-    await call({ action: 'ping' });
-    localStorage.setItem(KEY_STORE, adminKey);
-    $('#gate').classList.add('hidden');
-    $('#work').classList.remove('hidden');
-    load();
-  } catch (err) {
-    toast('Could not reach the sheet: ' + err.message, 'err', 5000);
-  }
 }
 
 /* ── load + render ─────────────────────────────────────────────────── */
@@ -225,6 +219,6 @@ $('#modal').addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* ── boot ──────────────────────────────────────────────────────────── */
-const saved = localStorage.getItem(KEY_STORE);
-if (saved !== null) { $('#admin-key').value = saved; unlock(); }
+adminKey = localStorage.getItem(KEY_STORE) || '';
+load();
 })();
