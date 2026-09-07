@@ -300,15 +300,31 @@ $('#sig-undo').addEventListener('click', () => { strokes.pop(); redrawPad(); upd
 $('#sig-clear').addEventListener('click', () => { strokes = []; redrawPad(); updateProgress(); buzz(); });
 window.addEventListener('resize', fitPad);
 
-/** Flatten the pad onto an opaque white 2x PNG so it reads in the sheet. */
+/**
+ * Flatten the pad to an opaque white PNG.
+ * Cropped to what was actually drawn and capped at MAX_W wide, because this
+ * data URL has to fit inside one spreadsheet cell (50,000 characters) for the
+ * signature to be readable back on other devices.
+ */
 function signaturePNG() {
   if (!strokes.length) return '';
-  const r = pad2.getBoundingClientRect(), s = 2;
+  const MAX_W = 420, PAD = 10;
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const st of strokes) for (const p of st.pts) {
+    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+  }
+  x0 -= PAD; y0 -= PAD; x1 += PAD; y1 += PAD;
+  const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+  const scale = Math.min(2, MAX_W / w);
+
   const c = document.createElement('canvas');
-  c.width = r.width * s; c.height = r.height * s;
+  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
   const x = c.getContext('2d');
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
-  x.scale(s, s); x.lineCap = 'round'; x.lineJoin = 'round';
+  x.scale(scale, scale); x.translate(-x0, -y0);
+  x.lineCap = 'round'; x.lineJoin = 'round';
   for (const st of strokes) {
     x.strokeStyle = st.color;              // the pad is white too, so what you
                                            // signed is exactly what gets saved

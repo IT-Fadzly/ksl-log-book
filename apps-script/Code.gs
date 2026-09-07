@@ -25,10 +25,15 @@ var IMAGES   = true;                       // false = store "(signed)" text inst
 
 var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
-  'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created', 'Synced At'
+  'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
+  'Synced At', 'Signature Data'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
+var COL_SIG_DATA  = 16;      /* hidden: the signature as a data URL, so other
+                                devices can read it back - an inserted picture
+                                cannot be read by the API, only written */
+var CELL_LIMIT    = 45000;   /* a cell holds 50,000 chars; leave headroom */
 
 /* ── entry points ──────────────────────────────────────────────────── */
 
@@ -103,7 +108,8 @@ function list_() {
       date: fmtDate_(r[2]), time: fmtTime_(r[3]),
       name: String(r[4]), department: String(r[5]), category: String(r[6]),
       priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
-      signature: '', photo: '',                        // images live in the sheet, not pulled back
+      signature: String(r[15] || ''),                  // readable copy of the signature
+      photo: '',                                       // the photo stays a picture in the sheet
       device: String(r[12]), created: r[13] ? new Date(r[13]).toISOString() : ''
     };
   }).filter(function (r) { return r.id; });
@@ -124,13 +130,17 @@ function sheet_() {
 
   var s = ss.getSheetByName(TAB_NAME) || ss.insertSheet(TAB_NAME);
 
-  if (s.getLastRow() === 0) {
+  // Write the header row on a new sheet, and extend it on an existing one
+  // when a column has been added since it was created.
+  var head = s.getLastRow() ? s.getRange(1, 1, 1, HEADERS.length).getValues()[0] : [];
+  if (head[0] !== HEADERS[0] || head[HEADERS.length - 1] !== HEADERS[HEADERS.length - 1]) {
     s.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
       .setFontWeight('bold').setBackground('#0e1424').setFontColor('#e7eefc');
     s.setFrozenRows(1);
     s.setColumnWidth(9, 340);                          // Request
     s.setColumnWidth(COL_SIGNATURE, 190);
     s.setColumnWidth(COL_PHOTO, 190);
+    s.hideColumns(COL_SIG_DATA);                       // machine-readable, not for humans
   }
   return s;
 }
@@ -160,7 +170,8 @@ function toRow_(entry, existing) {
     entry.photo     ? 'photo'  : (existing[11] || ''),
     entry.device || '',
     entry.created ? new Date(entry.created) : new Date(),
-    new Date()
+    new Date(),
+    entry.signature && entry.signature.length <= CELL_LIMIT ? entry.signature : (existing[15] || '')
   ];
 }
 
