@@ -57,7 +57,7 @@ const I18N = {
     'f.sig': 'Tandatangan anda', 'f.sighint': 'Tandatangan dengan jari atau tetikus',
     'f.signhere': '✍ tandatangan di sini', 'f.undo': 'Batal', 'f.clear': 'Padam',
     'f.submit': 'Hantar entri', 'f.reset': 'Set semula',
-    'cat.hw': 'Perkakasan', 'cat.sw': 'Perisian', 'cat.net': 'Rangkaian', 'cat.acc': 'Akses',
+    'cat.hw': 'Perkakasan', 'cat.sw': 'Perisian', 'cat.sys': 'Sistem', 'cat.net': 'Rangkaian', 'cat.acc': 'Akses',
     'cat.mt': 'Penyelenggaraan', 'cat.ot': 'Lain-lain',
     'pri.low': 'Rendah', 'pri.med': 'Sederhana', 'pri.high': 'Tinggi', 'pri.crit': 'Kritikal',
     'log.search': 'Cari nama, tiket, permohonan...', 'log.export': 'Eksport CSV', 'log.import': 'Import',
