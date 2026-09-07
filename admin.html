@@ -52,7 +52,7 @@ tailwind.config = {
     <div class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neon font-display text-xl font-bold text-white">K</div>
     <div class="min-w-0 flex-1">
       <h1 class="truncate font-display text-[15px] font-semibold leading-tight">Log Book <span class="gradient-text">Admin</span></h1>
-      <p class="truncate text-[11px] text-muted"><span id="count">0</span> entries · edit and delete</p>
+      <p class="truncate text-[11px] text-muted"><span id="count">0</span> entries · dashboard, edit and delete</p>
     </div>
     <a href="index.html" class="chip chip-ghost">← App</a>
     <button id="btn-reload" class="icon-btn" title="Reload from sheet" aria-label="Reload">
@@ -62,6 +62,49 @@ tailwind.config = {
 </header>
 
 <main class="mx-auto max-w-5xl px-4 pb-24 pt-5">
+
+  <!-- dashboard -->
+  <section class="mb-4 space-y-4">
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div class="stat glass"><p class="stat-label">Total entries</p><p id="s-total" class="stat-num">0</p><p class="stat-foot">in the sheet</p></div>
+      <div class="stat glass"><p class="stat-label">Open</p><p id="s-open" class="stat-num">0</p><p class="stat-foot">awaiting action</p></div>
+      <div class="stat glass"><p class="stat-label">Resolved</p><p id="s-res" class="stat-num">0</p><p id="s-rate" class="stat-foot">0% closed</p></div>
+      <div class="stat glass"><p class="stat-label">Today</p><p id="s-today" class="stat-num">0</p><p class="stat-foot">logged today</p></div>
+    </div>
+
+    <div class="glass p-5">
+      <h3 class="chart-title">Entries · last 7 days</h3>
+      <p class="chart-sub">Count of entries logged per day</p>
+      <div id="chart-week" class="chart-week mt-6"></div>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="glass p-5">
+        <h3 class="chart-title">By department</h3>
+        <p class="chart-sub">Entries per department</p>
+        <div id="chart-dept" class="mt-4 space-y-3"></div>
+      </div>
+      <div class="glass p-5">
+        <h3 class="chart-title">Status mix</h3>
+        <p class="chart-sub">Share of entries by current status</p>
+        <div id="chart-status" class="mt-5"></div>
+        <div id="legend-status" class="mt-4 flex flex-wrap gap-x-5 gap-y-2"></div>
+      </div>
+    </div>
+
+    <div class="glass p-5">
+      <h3 class="chart-title">Data table</h3>
+      <p class="chart-sub">The same numbers, in text</p>
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[420px] text-left text-[13px]">
+          <thead><tr class="border-b border-line text-[11px] uppercase tracking-wider text-muted">
+            <th class="py-2 pr-4">Department</th><th class="py-2 pr-4">Total</th><th class="py-2 pr-4">Open</th><th class="py-2">Resolved</th>
+          </tr></thead>
+          <tbody id="stat-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
   <!-- workspace -->
   <section id="work" class="space-y-4">

@@ -88,7 +88,6 @@ tailwind.config = {
   <nav class="mx-auto hidden max-w-5xl gap-1 px-4 pb-2 sm:flex" role="tablist">
     <button class="tab-btn" data-view="new" role="tab"><span data-i18n="nav.new">New Entry</span></button>
     <button class="tab-btn" data-view="log" role="tab"><span data-i18n="nav.log">Log Book</span> <span id="tab-count" class="tab-badge">0</span></button>
-    <button class="tab-btn" data-view="stats" role="tab"><span data-i18n="nav.stats">Dashboard</span></button>
   </nav>
 </header>
 
@@ -270,107 +269,16 @@ tailwind.config = {
     </div>
   </section>
 
-  <!-- ═══ DASHBOARD ═══ -->
-  <section id="view-stats" class="view hidden space-y-4">
-    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <div class="stat glass"><p class="stat-label" data-i18n="s.total">Total entries</p><p id="s-total" class="stat-num">0</p><p class="stat-foot" data-i18n="s.alltime">all time</p></div>
-      <div class="stat glass"><p class="stat-label" data-i18n="s.open">Open</p><p id="s-open" class="stat-num">0</p><p class="stat-foot" data-i18n="s.await">awaiting action</p></div>
-      <div class="stat glass"><p class="stat-label" data-i18n="s.res">Resolved</p><p id="s-res" class="stat-num">0</p><p id="s-rate" class="stat-foot">0% closed</p></div>
-      <div class="stat glass"><p class="stat-label" data-i18n="s.today">Today</p><p id="s-today" class="stat-num">0</p><p class="stat-foot" data-i18n="s.logged">logged today</p></div>
-    </div>
-
-    <div class="glass p-5">
-      <h3 class="chart-title" data-i18n="c.week">Entries · last 7 days</h3>
-      <p class="chart-sub" data-i18n="c.weeksub">Count of entries logged per day</p>
-      <div id="chart-week" class="chart-week mt-6"></div>
-    </div>
-
-    <div class="grid gap-4 lg:grid-cols-2">
-      <div class="glass p-5">
-        <h3 class="chart-title" data-i18n="c.dept">By department</h3>
-        <p class="chart-sub" data-i18n="c.deptsub">Entries per department</p>
-        <div id="chart-dept" class="mt-4 space-y-3"></div>
-      </div>
-      <div class="glass p-5">
-        <h3 class="chart-title" data-i18n="c.status">Status mix</h3>
-        <p class="chart-sub" data-i18n="c.statussub">Share of entries by current status</p>
-        <div id="chart-status" class="mt-5"></div>
-        <div id="legend-status" class="mt-4 flex flex-wrap gap-x-5 gap-y-2"></div>
-      </div>
-    </div>
-
-    <div class="glass p-5">
-      <div class="flex items-center justify-between gap-3">
-        <div><h3 class="chart-title" data-i18n="c.table">Data table</h3><p class="chart-sub" data-i18n="c.tablesub">The same numbers, in text</p></div>
-        <div class="flex gap-2">
-          <button class="chip chip-ghost" data-view="setup" data-i18n="nav.setup">Sheet</button>
-          <a href="admin.html" class="chip chip-ghost">Admin ↗</a>
-        </div>
-      </div>
-      <div class="mt-4 overflow-x-auto">
-        <table class="w-full min-w-[420px] text-left text-[13px]">
-          <thead><tr class="border-b border-line text-[11px] uppercase tracking-wider text-muted">
-            <th class="py-2 pr-4">Department</th><th class="py-2 pr-4">Total</th><th class="py-2 pr-4">Open</th><th class="py-2">Resolved</th>
-          </tr></thead>
-          <tbody id="stat-table"></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ SHEET SETUP ═══ -->
-  <section id="view-setup" class="view hidden space-y-4">
-    <div class="glass p-5">
-      <p class="text-[11px] uppercase tracking-[.22em] text-neon">Cloud</p>
-      <h2 class="mt-1 font-display text-2xl font-bold tracking-tight" data-i18n="set.title">Google Sheet sync ☁️</h2>
-      <p class="mt-1 text-[13px] text-subink" data-i18n="set.sub">Every entry is saved on the device first, then pushed to your sheet. If offline, it queues and syncs automatically later.</p>
-
-      <label class="fl mt-5 block">
-        <input id="endpoint" type="url" placeholder=" " class="input peer font-mono text-[12px]" />
-        <span class="fl-label" data-i18n="set.url">Apps Script Web App URL</span>
-      </label>
-
-      <div class="mt-4 flex flex-wrap items-center gap-2">
-        <button id="btn-save-endpoint" class="btn-primary !py-2 !text-[13px]"><span data-i18n="set.save">Save &amp; test</span></button>
-        <button id="btn-sync-now" class="btn-ghost !py-2 !text-[13px]"><span data-i18n="set.sync">Sync now</span></button>
-        <a id="sheet-link" href="https://docs.google.com/spreadsheets/d/1X9pxps07T4TDXeNxsS4wY8nPuZmhcxXdMp6VFptlLpE/edit" target="_blank" rel="noopener" class="chip chip-ghost" data-i18n="set.open">Open sheet ↗</a>
-      </div>
-
-      <div id="endpoint-state" class="mt-4 rounded-xl border border-line bg-panel/60 px-3 py-2 text-[12px] text-subink">
-        <span data-i18n="set.notset">Not configured — entries stay on this device only.</span>
-      </div>
-    </div>
-
-    <div class="glass p-5">
-      <h3 class="chart-title" data-i18n="set.how">How to connect (one time, ~3 minutes)</h3>
-      <ol class="mt-4 space-y-3 text-[13px] text-subink">
-        <li class="step"><span class="step-n">1</span><span data-i18n="set.s1">Open your sheet, then <b class="text-ink">Extensions → Apps Script</b>.</span></li>
-        <li class="step"><span class="step-n">2</span><span data-i18n="set.s2">Delete the sample code, paste everything from <b class="text-ink">apps-script/Code.gs</b> in this project, and Save.</span></li>
-        <li class="step"><span class="step-n">3</span><span data-i18n="set.s3">Click <b class="text-ink">Deploy → New deployment → Web app</b>. Execute as <b class="text-ink">Me</b>, access <b class="text-ink">Anyone</b>. Authorise when asked.</span></li>
-        <li class="step"><span class="step-n">4</span><span data-i18n="set.s4">Copy the <b class="text-ink">/exec</b> URL, paste it in the box above, and press Save &amp; test. A test row appears in the sheet.</span></li>
-      </ol>
-      <div class="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-200/90" data-i18n="set.note">
-        Access "Anyone" means anyone with the URL can post rows. For internal use keep the URL private, or set a SECRET in Code.gs and in the field below.
-      </div>
-      <label class="fl mt-4 block">
-        <input id="secret" type="text" placeholder=" " class="input peer font-mono text-[12px]" />
-        <span class="fl-label" data-i18n="set.secret">Shared secret (optional)</span>
-      </label>
-    </div>
-  </section>
 </main>
 
 <!-- mobile bottom nav -->
 <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-surface/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden">
-  <div class="grid grid-cols-3">
+  <div class="grid grid-cols-2">
     <button class="bnav" data-view="new">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="nav.new">New Entry</span>
     </button>
     <button class="bnav" data-view="log">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span data-i18n="nav.log">Log Book</span>
-    </button>
-    <button class="bnav" data-view="stats">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="nav.stats">Dashboard</span>
     </button>
   </div>
 </nav>

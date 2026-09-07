@@ -134,34 +134,11 @@ function celebrate() {
   })();
 }
 
-/* Numbers that roll up instead of snapping — cheap delight on the dashboard.
-   A token per element cancels an in-flight roll, so two renders in the same
-   tick can never fight over the same number. */
-const rolling = new WeakMap();
-function countTo(el, target) {
-  const token = (rolling.get(el) || 0) + 1;
-  rolling.set(el, token);
-
-  const from = parseInt(el.textContent, 10) || 0;
-  if (from === target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = target; return; }
-
-  const lo = Math.min(from, target), hi = Math.max(from, target);
-  const t0 = performance.now(), dur = 550;
-  (function step(now) {
-    if (rolling.get(el) !== token) return;                 // a newer roll took over
-    const k = Math.min(1, Math.max(0, (now - t0) / dur));
-    const v = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
-    el.textContent = Math.min(hi, Math.max(lo, v));
-    if (k < 1) requestAnimationFrame(step); else el.textContent = target;
-  })(t0);
-}
-
 /* ── theme ─────────────────────────────────────────────────────────── */
 function applyTheme() {
   document.documentElement.classList.toggle('dark', cfg.theme === 'dark');
   const meta = $('meta[name="theme-color"]');
   if (meta) meta.content = cfg.theme === 'dark' ? '#17161c' : '#faf7f4';
-  renderStats();
 }
 
 /* ── routing ───────────────────────────────────────────────────────── */
@@ -169,7 +146,6 @@ function show(view) {
   $$('.view').forEach(v => v.classList.toggle('hidden', v.id !== 'view-' + view));
   $$('[data-view]').forEach(b => b.classList.toggle('is-on', b.dataset.view === view));
   if (view === 'log') { renderLog(); refreshIfStale(); }
-  if (view === 'stats') renderStats();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 $$('[data-view]').forEach(b => b.addEventListener('click', () => { show(b.dataset.view); buzz(); }));
@@ -415,7 +391,7 @@ function refreshCounts() {
   const n = pendingCount(), badge = $('#sync-badge');
   badge.textContent = n;
   badge.classList.toggle('hidden', n === 0);
-  renderLog(); renderStats();
+  renderLog();
 }
 
 async function callSheet(payload) {
@@ -467,7 +443,7 @@ function refreshIfStale() {
 }
 
 async function syncAll(loud = true) {
-  if (!cfg.endpoint) { show('setup'); return toast('Add your Apps Script URL first.', 'err'); }
+  if (!cfg.endpoint) return toast('No sheet endpoint configured.', 'err');
   if (!navigator.onLine) return toast('Offline — will sync when back online.', 'err');
   const queue = entries.filter(e => !e.synced);
   const icon = $('#btn-sync svg'); icon.classList.add('spin');
@@ -484,31 +460,6 @@ async function syncAll(loud = true) {
 }
 
 $('#btn-sync').addEventListener('click', () => syncAll(true));
-$('#btn-sync-now').addEventListener('click', () => syncAll(true));
-
-$('#btn-save-endpoint').addEventListener('click', async () => {
-  const url = $('#endpoint').value.trim();
-  if (url && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(url))
-    return toast('That should be the Apps Script /exec URL.', 'err', 5000);
-  cfg.endpoint = url; cfg.secret = $('#secret').value.trim(); saveCfg();
-  if (!url) { paintEndpointState('Not configured — entries stay on this device only.', 'muted'); return; }
-  paintEndpointState('Testing…', 'muted');
-  try {
-    const r = await callSheet({ action: 'ping' });
-    paintEndpointState(`Connected to "${esc(r.sheet || 'sheet')}" · ${r.rows ?? 0} rows`, 'ok');
-    toast('Connected. Syncing queued entries…');
-    syncAll(true);
-  } catch (err) {
-    paintEndpointState('Failed: ' + esc(err.message), 'err');
-    toast('Could not reach the web app.', 'err', 5000);
-  }
-});
-
-function paintEndpointState(msg, kind) {
-  const box = $('#endpoint-state');
-  const color = kind === 'ok' ? 'var(--c-aqua)' : kind === 'err' ? 'var(--c-red)' : '';
-  box.innerHTML = `<span style="color:${color}">${msg}</span>`;
-}
 
 window.addEventListener('online',  () => { $('#net-state').textContent = 'online'; syncAll(false); });
 window.addEventListener('offline', () => { $('#net-state').textContent = 'offline'; });
@@ -656,68 +607,6 @@ $('#import-input').addEventListener('change', ev => {
   r.readAsText(f);
 });
 
-/* ══ DASHBOARD ════════════════════════════════════════════════════════
-   Plain-HTML marks: one series per chart, so no legend is needed except
-   on the status stack, where segments are also value-labelled. */
-function renderStats() {
-  const total = entries.length;
-  const open = entries.filter(e => e.status !== 'Resolved').length;
-  const res  = entries.filter(e => e.status === 'Resolved').length;
-  const today = todayISO(new Date());
-  countTo($('#s-total'), total);
-  countTo($('#s-open'), open);
-  countTo($('#s-res'), res);
-  countTo($('#s-today'), entries.filter(e => e.date === today).length);
-  $('#s-open').style.color = 'var(--c-yellow)';
-  $('#s-res').style.color  = 'var(--c-aqua)';
-  $('#s-today').style.color = 'var(--c-blue)';
-  $('#s-rate').textContent = total ? `${Math.round(res / total * 100)}% closed` : '0% closed';
-
-  /* last 7 days — vertical bars, 4px rounded top anchored to the axis */
-  const days = [...Array(7)].map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const iso = todayISO(d);
-    return { iso, label: d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 3), n: entries.filter(e => e.date === iso).length };
-  });
-  const peak = Math.max(1, ...days.map(d => d.n));
-  $('#chart-week').innerHTML = days.map((d, i) => `
-    <div class="wk-col" title="${d.label} ${d.iso} · ${d.n} ${d.n === 1 ? 'entry' : 'entries'}">
-      <span class="wk-val">${d.n || ''}</span>
-      <div class="wk-bar" style="height:${(d.n / peak) * 100}%;animation-delay:${i * 45}ms;${d.iso === todayISO(new Date()) ? 'background:var(--accent)' : ''}"></div>
-      <div class="wk-axis w-full"></div>
-      <span class="wk-lab">${d.label}</span>
-    </div>`).join('');
-
-  /* by department — horizontal bars, every bar directly labelled */
-  const byDept = {};
-  entries.forEach(e => { byDept[e.department] = (byDept[e.department] || 0) + 1; });
-  const dRows = Object.entries(byDept).sort((a, b) => b[1] - a[1]);
-  const dMax = Math.max(1, ...dRows.map(r => r[1]));
-  $('#chart-dept').innerHTML = dRows.length ? dRows.map(([d, n], i) => `
-    <div class="bar-row" title="${esc(d)} · ${n}">
-      <span class="text-[12.5px] text-subink">${esc(d)}</span>
-      <span class="font-mono text-[12.5px] font-semibold">${n}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${(n / dMax) * 100}%;animation-delay:${i * 60}ms"></div></div>
-    </div>`).join('') : '<p class="text-[13px] text-muted">No data yet.</p>';
-
-  /* status mix — a single stacked bar, 2px gaps, legend with counts */
-  const counts = STATUS.map(s => ({ ...s, n: entries.filter(e => e.status === s.key).length }));
-  const sum = counts.reduce((a, c) => a + c.n, 0);
-  $('#chart-status').innerHTML = sum ? `<div class="stack">${counts.filter(c => c.n).map(c =>
-    `<span style="flex:${c.n};background:${c.color}" title="${c.key} · ${c.n} (${Math.round(c.n / sum * 100)}%)"></span>`).join('')}</div>`
-    : '<p class="text-[13px] text-muted">No data yet.</p>';
-  $('#legend-status').innerHTML = counts.map(c =>
-    `<span class="lg-item"><span class="lg-swatch" style="background:${c.color}"></span>${c.key} <b class="font-mono text-ink">${c.n}</b></span>`).join('');
-
-  /* table view — the relief for low-contrast marks in light mode */
-  $('#stat-table').innerHTML = dRows.length ? dRows.map(([d, n]) => {
-    const o = entries.filter(e => e.department === d && e.status !== 'Resolved').length;
-    return `<tr class="border-b border-line/60">
-      <td class="py-2 pr-4">${esc(d)}</td><td class="py-2 pr-4 font-mono">${n}</td>
-      <td class="py-2 pr-4 font-mono">${o}</td><td class="py-2 font-mono">${n - o}</td></tr>`;
-  }).join('') : '<tr><td colspan="4" class="py-3 text-muted">No data yet.</td></tr>';
-}
-
 /* ══ CHROME ═══════════════════════════════════════════════════════════ */
 $('#btn-theme').addEventListener('click', () => { cfg.theme = cfg.theme === 'dark' ? 'light' : 'dark'; saveCfg(); applyTheme(); buzz(); });
 $('#btn-lang').addEventListener('click', () => {
@@ -740,11 +629,7 @@ applyLang();
 fitPad();
 stampNow();
 $('#ticket-id').textContent = nextTicket();
-$('#endpoint').value = cfg.endpoint;
-$('#secret').value = cfg.secret;
-$('#sheet-link').href = SHEET_URL;
 $('#net-state').textContent = navigator.onLine ? 'online' : 'offline';
-if (cfg.endpoint) paintEndpointState('Endpoint ready — press Sync now to check the connection.', 'muted');
 show('new');
 refreshCounts();
 updateProgress();

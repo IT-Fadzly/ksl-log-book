@@ -83,10 +83,75 @@ async function load() {
     $('#f-dept').innerHTML = '<option value="">All departments</option>' +
       depts.map(d => `<option${d === keep ? ' selected' : ''}>${esc(d)}</option>`).join('');
     render();
+    renderStats();
   } catch (err) {
     $('#state').textContent = '';
     toast('Load failed: ' + err.message, 'err', 5000);
   }
+}
+
+/* ── dashboard ─────────────────────────────────────────────────────────
+   One series per chart, so no legend is needed except on the status stack,
+   where the segments are value-labelled as well. Numbers come from the
+   sheet, so every admin sees the same figures. */
+const pad = n => String(n).padStart(2, '0');
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const ST_COLOR = { 'Open': 'var(--c-yellow)', 'In Progress': 'var(--c-blue)', 'Resolved': 'var(--c-aqua)' };
+
+function renderStats() {
+  const total = rows.length;
+  const res = rows.filter(r => r.status === 'Resolved').length;
+  const today = isoOf(new Date());
+
+  $('#s-total').textContent = total;
+  $('#s-open').textContent = total - res;
+  $('#s-res').textContent = res;
+  $('#s-today').textContent = rows.filter(r => r.date === today).length;
+  $('#s-open').style.color = 'var(--c-yellow)';
+  $('#s-res').style.color = 'var(--c-aqua)';
+  $('#s-today').style.color = 'var(--c-blue)';
+  $('#s-rate').textContent = total ? `${Math.round(res / total * 100)}% closed` : '0% closed';
+
+  const days = [...Array(7)].map((_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    const iso = isoOf(d);
+    return { iso, label: d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 3), n: rows.filter(r => r.date === iso).length };
+  });
+  const peak = Math.max(1, ...days.map(d => d.n));
+  $('#chart-week').innerHTML = days.map((d, i) => `
+    <div class="wk-col" title="${d.label} ${d.iso} · ${d.n} ${d.n === 1 ? 'entry' : 'entries'}">
+      <span class="wk-val">${d.n || ''}</span>
+      <div class="wk-bar" style="height:${(d.n / peak) * 100}%;animation-delay:${i * 45}ms;${d.iso === today ? 'background:var(--accent)' : ''}"></div>
+      <div class="wk-axis w-full"></div>
+      <span class="wk-lab">${d.label}</span>
+    </div>`).join('');
+
+  const byDept = {};
+  rows.forEach(r => { byDept[r.department] = (byDept[r.department] || 0) + 1; });
+  const dRows = Object.entries(byDept).sort((a, b) => b[1] - a[1]);
+  const dMax = Math.max(1, ...dRows.map(r => r[1]));
+  $('#chart-dept').innerHTML = dRows.length ? dRows.map(([d, n], i) => `
+    <div class="bar-row" title="${esc(d)} · ${n}">
+      <span class="text-[12.5px] text-subink">${esc(d)}</span>
+      <span class="font-mono text-[12.5px] font-semibold">${n}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${(n / dMax) * 100}%;animation-delay:${i * 60}ms"></div></div>
+    </div>`).join('') : '<p class="text-[13px] text-muted">No data yet.</p>';
+
+  const counts = STATUSES.map(k => ({ k, n: rows.filter(r => r.status === k).length }));
+  const sum = counts.reduce((a, c) => a + c.n, 0);
+  $('#chart-status').innerHTML = sum
+    ? `<div class="stack">${counts.filter(c => c.n).map(c =>
+        `<span style="flex:${c.n};background:${ST_COLOR[c.k]}" title="${c.k} · ${c.n} (${Math.round(c.n / sum * 100)}%)"></span>`).join('')}</div>`
+    : '<p class="text-[13px] text-muted">No data yet.</p>';
+  $('#legend-status').innerHTML = counts.map(c =>
+    `<span class="lg-item"><span class="lg-swatch" style="background:${ST_COLOR[c.k]}"></span>${c.k} <b class="font-mono text-ink">${c.n}</b></span>`).join('');
+
+  $('#stat-table').innerHTML = dRows.length ? dRows.map(([d, n]) => {
+    const o = rows.filter(r => r.department === d && r.status !== 'Resolved').length;
+    return `<tr class="border-b border-line/60">
+      <td class="py-2 pr-4">${esc(d)}</td><td class="py-2 pr-4 font-mono">${n}</td>
+      <td class="py-2 pr-4 font-mono">${o}</td><td class="py-2 font-mono">${n - o}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="py-3 text-muted">No data yet.</td></tr>';
 }
 
 function visible() {
