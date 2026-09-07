@@ -89,7 +89,6 @@ tailwind.config = {
     <button class="tab-btn" data-view="new" role="tab"><span data-i18n="nav.new">New Entry</span></button>
     <button class="tab-btn" data-view="log" role="tab"><span data-i18n="nav.log">Log Book</span> <span id="tab-count" class="tab-badge">0</span></button>
     <button class="tab-btn" data-view="stats" role="tab"><span data-i18n="nav.stats">Dashboard</span></button>
-    <button class="tab-btn" data-view="setup" role="tab"><span data-i18n="nav.setup">Sheet</span></button>
   </nav>
 </header>
 
@@ -303,7 +302,10 @@ tailwind.config = {
     <div class="glass p-5">
       <div class="flex items-center justify-between gap-3">
         <div><h3 class="chart-title" data-i18n="c.table">Data table</h3><p class="chart-sub" data-i18n="c.tablesub">The same numbers, in text</p></div>
-        <button id="btn-clear-all" class="chip chip-danger" data-i18n="c.wipe">Clear all</button>
+        <div class="flex gap-2">
+          <button class="chip chip-ghost" data-view="setup" data-i18n="nav.setup">Sheet</button>
+          <button id="btn-clear-all" class="chip chip-danger" data-i18n="c.wipe">Clear all</button>
+        </div>
       </div>
       <div class="mt-4 overflow-x-auto">
         <table class="w-full min-w-[420px] text-left text-[13px]">
@@ -360,7 +362,7 @@ tailwind.config = {
 
 <!-- mobile bottom nav -->
 <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-surface/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden">
-  <div class="grid grid-cols-4">
+  <div class="grid grid-cols-3">
     <button class="bnav" data-view="new">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="nav.new">New Entry</span>
     </button>
@@ -369,9 +371,6 @@ tailwind.config = {
     </button>
     <button class="bnav" data-view="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span data-i18n="nav.stats">Dashboard</span>
-    </button>
-    <button class="bnav" data-view="setup">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6.5 18A4.5 4.5 0 0 1 6 9.05a6 6 0 0 1 11.6 1.2A3.75 3.75 0 0 1 17 18Z"/></svg><span data-i18n="nav.setup">Sheet</span>
     </button>
   </div>
 </nav>
