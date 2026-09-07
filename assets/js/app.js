@@ -592,17 +592,12 @@ function openDetail(id) {
     ${e.photo ? `<img src="${e.photo}" alt="attached photo" class="mt-3 w-full rounded-xl border border-line object-cover" />` : ''}
     ${e.signature ? `<div class="mt-3"><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Signature</p><img src="${e.signature}" alt="signature" class="w-full rounded-xl border border-line bg-white" /></div>` : ''}
 
-    <p class="mt-4 mb-2 text-[11px] uppercase tracking-wider text-muted">Set status</p>
-    <div class="grid grid-cols-3 gap-2">
-      ${STATUS.map(s => `<button data-act="status" data-val="${s.key}" class="chip justify-center ${e.status === s.key ? 'is-on' : ''}">${s.key}</button>`).join('')}
-    </div>
-
     <div class="mt-5 flex flex-wrap gap-2">
       <button data-act="share" class="chip chip-ghost">Share</button>
       <button data-act="print" class="chip chip-ghost">Print</button>
       ${e.synced ? '' : '<button data-act="push" class="chip chip-ghost">Send to sheet</button>'}
-      <button data-act="delete" class="chip chip-danger ml-auto">Delete</button>
-    </div>`;
+    </div>
+    <p class="mt-3 text-[11px] text-muted">Entries cannot be changed here — a log book is a record. Ask an admin to edit or remove one.</p>`;
   modal.classList.add('is-open');
   modal.dataset.id = id;
 }
@@ -615,13 +610,6 @@ modal.addEventListener('click', async ev => {
   const act = b.dataset.act;
 
   if (act === 'close') closeModal();
-  if (act === 'status') {
-    e.status = b.dataset.val; e.synced = false; saveEntries(); openDetail(id); refreshCounts(); buzz();
-    if (cfg.endpoint && navigator.onLine) {
-      try { await callSheet({ action: 'update', entry: e }); e.synced = true; saveEntries(); refreshCounts(); openDetail(id); toast('Status updated in the sheet.'); }
-      catch (err) { toast('Saved locally, sheet update failed.', 'err'); }
-    }
-  }
   if (act === 'push') { (await pushEntry(e, false)) && openDetail(id); }
   if (act === 'share') {
     const text = `${e.ticket}\n${e.date} ${e.time}\n${e.name} · ${e.department}\n${e.priority} · ${e.category} · ${e.status}\n\n${e.request}`;
@@ -629,10 +617,6 @@ modal.addEventListener('click', async ev => {
     else { await navigator.clipboard.writeText(text); toast('Entry copied to clipboard.'); }
   }
   if (act === 'print') window.print();
-  if (act === 'delete') {
-    if (!confirm('Delete this entry from this device?')) return;
-    entries = entries.filter(x => x.id !== id); saveEntries(); closeModal(); refreshCounts(); toast('Entry deleted.');
-  }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
@@ -670,11 +654,6 @@ $('#import-input').addEventListener('change', ev => {
     ev.target.value = '';
   };
   r.readAsText(f);
-});
-
-$('#btn-clear-all').addEventListener('click', () => {
-  if (!confirm('Delete every entry stored on this device? Rows already in the Google Sheet stay there.')) return;
-  entries = []; saveEntries(); refreshCounts(); toast('Local log book cleared.');
 });
 
 /* ══ DASHBOARD ════════════════════════════════════════════════════════

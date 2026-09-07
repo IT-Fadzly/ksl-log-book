@@ -1,11 +1,12 @@
 /* KSL Digital Log Book — offline shell.
    Same-origin files are pre-cached; the Tailwind CDN and Google Fonts are
    cached the first time they are fetched, so the app also styles offline. */
-const CACHE = 'ksl-logbook-v2';
+const CACHE = 'ksl-logbook-v3';
 const SHELL = [
-  './', './index.html',
+  './', './index.html', './admin.html',
   './assets/css/style.css',
   './assets/js/app.js',
+  './assets/js/admin.js',
   './assets/icon.svg',
   './manifest.webmanifest'
 ];

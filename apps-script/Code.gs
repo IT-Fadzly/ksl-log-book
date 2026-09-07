@@ -16,10 +16,15 @@
  *   {action:'append', entry:{...}}     → add a row (idempotent by entry.id)
  *   {action:'update', entry:{...}}     → update the row with that id
  *   {action:'list'}                    → return the most recent rows
+ *   {action:'delete', id:'...'}        → remove a row and its pictures
+ *
+ * 'update' and 'delete' are the admin actions. Set ADMIN_KEY below and they
+ * require it; 'append' and 'list' stay open so the log book itself works.
  */
 
 var TAB_NAME = 'Log Book';
-var SECRET   = '';                         // set a string here + in the app to lock it down
+var SECRET    = '';                        // set a string here + in the app to lock it down
+var ADMIN_KEY = '';                        // set a passphrase to gate edit + delete
 var MAX_LIST = 300;
 var IMAGES   = true;                       // false = store "(signed)" text instead of the image
 
@@ -46,10 +51,16 @@ function doPost(e) {
 
     if (SECRET && body.secret !== SECRET) return reply({ ok: false, error: 'Bad secret' });
 
+    var admin = ['update', 'delete'].indexOf(body.action) !== -1;
+    if (admin && ADMIN_KEY && body.key !== ADMIN_KEY) {
+      return reply({ ok: false, error: 'Admin key required' });
+    }
+
     switch (body.action) {
       case 'ping':   return reply(ping_());
       case 'append': return reply(append_(body.entry));
       case 'update': return reply(update_(body.entry));
+      case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_());
       default:       return reply({ ok: false, error: 'Unknown action: ' + body.action });
     }
@@ -93,6 +104,24 @@ function update_(entry) {
   s.getRange(row, 1, 1, HEADERS.length).setValues([toRow_(entry, existing)]);
   attach_(s, row, entry);
   return { ok: true, row: row, id: entry.id };
+}
+
+/** Remove a row and any pictures anchored to it. */
+function delete_(id) {
+  if (!id) return { ok: false, error: 'id is required' };
+  var s = sheet_();
+  var row = findRow_(s, id);
+  if (!row) return { ok: false, error: 'Not found: ' + id };
+
+  try {
+    var imgs = s.getImages();
+    for (var i = 0; i < imgs.length; i++) {
+      if (imgs[i].getAnchorCell().getRow() === row) imgs[i].remove();
+    }
+  } catch (ignore) {}                       // a stuck picture must not block the delete
+
+  s.deleteRow(row);
+  return { ok: true, deleted: id, row: row };
 }
 
 function list_() {

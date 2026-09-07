@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#faf7f4" />
+<meta name="robots" content="noindex" />
+<title>KSL Log Book · Admin</title>
+<link rel="icon" href="assets/icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    fontFamily: {
+      sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+      display: ['Outfit', '"Plus Jakarta Sans"', 'sans-serif'],
+      mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+    },
+    colors: {
+      ink: 'rgb(var(--ink) / <alpha-value>)',
+      subink: 'rgb(var(--subink) / <alpha-value>)',
+      muted: 'rgb(var(--muted) / <alpha-value>)',
+      surface: 'rgb(var(--surface) / <alpha-value>)',
+      panel: 'rgb(var(--panel) / <alpha-value>)',
+      line: 'rgb(var(--line) / <alpha-value>)',
+      neon: 'var(--accent)', plasma: 'var(--accent-2)'
+    }
+  } }
+}
+</script>
+<link rel="stylesheet" href="assets/css/style.css" />
+<script>
+  try {
+    var c = JSON.parse(localStorage.getItem('ksl_config_v1') || '{}');
+    if (c.theme === 'dark') document.documentElement.classList.add('dark');
+  } catch (e) {}
+</script>
+</head>
+<body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
+
+<div class="bg-stage" aria-hidden="true">
+  <div class="aurora aurora-1"></div>
+  <div class="aurora aurora-2"></div>
+</div>
+
+<header class="sticky top-0 z-40 border-b border-line/70 bg-surface/75 backdrop-blur-xl">
+  <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
+    <div class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neon font-display text-xl font-bold text-white">K</div>
+    <div class="min-w-0 flex-1">
+      <h1 class="truncate font-display text-[15px] font-semibold leading-tight">Log Book <span class="gradient-text">Admin</span></h1>
+      <p class="truncate text-[11px] text-muted"><span id="count">0</span> entries · edit and delete</p>
+    </div>
+    <a href="index.html" class="chip chip-ghost">← App</a>
+    <button id="btn-reload" class="icon-btn" title="Reload from sheet" aria-label="Reload">
+      <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="mx-auto max-w-5xl px-4 pb-24 pt-5">
+
+  <!-- gate -->
+  <section id="gate" class="glass p-5">
+    <p class="text-[11px] uppercase tracking-[.22em] text-neon">Restricted</p>
+    <h2 class="mt-1 font-display text-2xl font-bold tracking-tight">Admin access</h2>
+    <p class="mt-1 text-[13px] text-subink">Editing and deleting change the Google Sheet for everyone. Enter the admin key set in <span class="font-mono">Code.gs</span>. Leave blank if no key is configured.</p>
+    <label class="fl mt-5 block">
+      <input id="admin-key" type="password" placeholder=" " class="input peer font-mono" />
+      <span class="fl-label">Admin key</span>
+    </label>
+    <button id="btn-unlock" class="btn-primary mt-4 w-full sm:w-auto">Unlock</button>
+  </section>
+
+  <!-- workspace -->
+  <section id="work" class="hidden space-y-4">
+    <div class="glass p-4">
+      <div class="relative">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search ticket, name, department, request…" class="input pl-9" />
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <select id="f-status" class="mini-select"><option value="">All status</option><option>Open</option><option>In Progress</option><option>Resolved</option></select>
+        <select id="f-dept" class="mini-select"><option value="">All departments</option></select>
+        <span id="state" class="ml-auto text-[12px] text-muted"></span>
+      </div>
+    </div>
+
+    <div id="list" class="space-y-3"></div>
+    <div id="empty" class="glass hidden p-10 text-center">
+      <p class="font-display text-lg font-semibold">Nothing to show</p>
+      <p class="mt-1 text-[13px] text-subink">No rows matched, or the sheet is empty.</p>
+    </div>
+  </section>
+</main>
+
+<!-- edit dialog -->
+<div id="modal" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/70 backdrop-blur-sm sm:items-center sm:p-6">
+  <div id="modal-card" class="glass max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-b-none rounded-t-3xl p-5 sm:rounded-3xl"></div>
+</div>
+
+<div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"></div>
+
+<script src="assets/js/admin.js"></script>
+</body>
+</html>
