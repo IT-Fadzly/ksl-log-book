@@ -234,20 +234,40 @@ function updateProgress() {
   if (ring) { ring.style.setProperty('--p', pct); $('#ring-val').textContent = pct + '%'; }
 }
 
-/* ── photo (downscaled so a phone shot stays small) ────────────────── */
+/* ── photo ─────────────────────────────────────────────────────────────
+   A phone camera shot is several megabytes; it has to come down to something
+   that fits in a single spreadsheet cell (50,000 characters), otherwise the
+   photo can be written to the sheet but never read back on another device.
+   Step the size and quality down until it fits. */
+const CELL_CHARS = 45000;
+
+function encodeToFit(img, maxChars) {
+  const steps = [[900, .7], [760, .62], [640, .55], [520, .5], [420, .45], [340, .4]];
+  let out = '';
+  for (const [max, q] of steps) {
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    out = c.toDataURL('image/jpeg', q);
+    if (out.length <= maxChars) return out;
+  }
+  return out;                                   // smallest we can do; still stored locally
+}
+
 $('#photo-input').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const img = new Image();
   img.onload = () => {
-    const max = 900, scale = Math.min(1, max / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    photoData = c.toDataURL('image/jpeg', 0.72);
+    photoData = encodeToFit(img, CELL_CHARS);
     $('#photo-preview').src = photoData;
     $('#photo-wrap').classList.replace('hidden', 'flex');
     URL.revokeObjectURL(img.src);
-    toast('Photo attached.');
+    toast(photoData.length <= CELL_CHARS
+      ? 'Photo attached.'
+      : 'Photo attached — too large for the sheet, kept on this device.', 
+      photoData.length <= CELL_CHARS ? 'ok' : 'err');
   };
   img.src = URL.createObjectURL(file);
 });

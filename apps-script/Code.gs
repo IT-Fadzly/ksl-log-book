@@ -26,13 +26,14 @@ var IMAGES   = true;                       // false = store "(signed)" text inst
 var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
   'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
-  'Synced At', 'Signature Data'
+  'Synced At', 'Signature Data', 'Photo Data'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
-var COL_SIG_DATA  = 16;      /* hidden: the signature as a data URL, so other
+var COL_SIG_DATA   = 16;     /* hidden: the signature as a data URL, so other
                                 devices can read it back - an inserted picture
                                 cannot be read by the API, only written */
+var COL_PHOTO_DATA = 17;     /* hidden: same idea for the photo */
 var CELL_LIMIT    = 45000;   /* a cell holds 50,000 chars; leave headroom */
 
 /* ── entry points ──────────────────────────────────────────────────── */
@@ -108,8 +109,8 @@ function list_() {
       date: fmtDate_(r[2]), time: fmtTime_(r[3]),
       name: String(r[4]), department: String(r[5]), category: String(r[6]),
       priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
-      signature: String(r[15] || ''),                  // readable copy of the signature
-      photo: '',                                       // the photo stays a picture in the sheet
+      signature: String(r[15] || ''),                  // readable copies - the pictures
+      photo: String(r[16] || ''),                      // in the cells cannot be read back
       device: String(r[12]), created: r[13] ? new Date(r[13]).toISOString() : ''
     };
   }).filter(function (r) { return r.id; });
@@ -130,6 +131,11 @@ function sheet_() {
 
   var s = ss.getSheetByName(TAB_NAME) || ss.insertSheet(TAB_NAME);
 
+  // Make sure the grid is wide enough before writing to the last column.
+  if (s.getMaxColumns() < HEADERS.length) {
+    s.insertColumnsAfter(s.getMaxColumns(), HEADERS.length - s.getMaxColumns());
+  }
+
   // Write the header row on a new sheet, and extend it on an existing one
   // when a column has been added since it was created.
   var head = s.getLastRow() ? s.getRange(1, 1, 1, HEADERS.length).getValues()[0] : [];
@@ -140,7 +146,7 @@ function sheet_() {
     s.setColumnWidth(9, 340);                          // Request
     s.setColumnWidth(COL_SIGNATURE, 190);
     s.setColumnWidth(COL_PHOTO, 190);
-    s.hideColumns(COL_SIG_DATA);                       // machine-readable, not for humans
+    s.hideColumns(COL_SIG_DATA, 2);                    // machine-readable, not for humans
   }
   return s;
 }
@@ -171,7 +177,8 @@ function toRow_(entry, existing) {
     entry.device || '',
     entry.created ? new Date(entry.created) : new Date(),
     new Date(),
-    entry.signature && entry.signature.length <= CELL_LIMIT ? entry.signature : (existing[15] || '')
+    entry.signature && entry.signature.length <= CELL_LIMIT ? entry.signature : (existing[15] || ''),
+    entry.photo     && entry.photo.length     <= CELL_LIMIT ? entry.photo     : (existing[16] || '')
   ];
 }
 
