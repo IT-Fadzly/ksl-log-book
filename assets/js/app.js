@@ -168,7 +168,7 @@ function applyTheme() {
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('hidden', v.id !== 'view-' + view));
   $$('[data-view]').forEach(b => b.classList.toggle('is-on', b.dataset.view === view));
-  if (view === 'log') renderLog();
+  if (view === 'log') { renderLog(); refreshIfStale(); }
   if (view === 'stats') renderStats();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -410,6 +410,26 @@ async function pushEntry(entry, quiet = true) {
   }
 }
 
+let lastSync = 0;
+
+/** Fetch rows from the sheet and merge in anything this device has not seen. */
+async function pullRows() {
+  const { rows } = await callSheet({ action: 'list' });
+  let added = 0;
+  (rows || []).forEach(r => {
+    if (r.id && !entries.some(e => e.id === r.id)) { entries.push(Object.assign(r, { synced: true })); added++; }
+  });
+  if (added) { entries.sort((a, b) => (b.created || '').localeCompare(a.created || '')); saveEntries(); }
+  lastSync = Date.now();
+  return added;
+}
+
+/** Pull quietly when the log book is opened and the last pull is stale. */
+function refreshIfStale() {
+  if (!cfg.endpoint || !navigator.onLine || Date.now() - lastSync < 45000) return;
+  pullRows().then(n => { if (n) refreshCounts(); }).catch(() => {});
+}
+
 async function syncAll(loud = true) {
   if (!cfg.endpoint) { show('setup'); return toast('Add your Apps Script URL first.', 'err'); }
   if (!navigator.onLine) return toast('Offline — will sync when back online.', 'err');
@@ -418,12 +438,7 @@ async function syncAll(loud = true) {
   let ok = 0, fail = 0;
   for (const e of queue) { (await pushEntry(e)) ? ok++ : fail++; }
   try {
-    const { rows } = await callSheet({ action: 'list' });
-    let added = 0;
-    (rows || []).forEach(r => {
-      if (r.id && !entries.some(e => e.id === r.id)) { entries.push(Object.assign(r, { synced: true })); added++; }
-    });
-    if (added) { entries.sort((a, b) => (b.created || '').localeCompare(a.created || '')); saveEntries(); }
+    const added = await pullRows();
     if (loud) toast(`Synced · ${ok} sent, ${added} pulled${fail ? `, ${fail} failed` : ''}`, fail ? 'err' : 'ok');
   } catch (err) {
     if (loud) toast('Sync: ' + err.message, 'err', 5000);
@@ -459,7 +474,7 @@ function paintEndpointState(msg, kind) {
   box.innerHTML = `<span style="color:${color}">${msg}</span>`;
 }
 
-window.addEventListener('online',  () => { $('#net-state').textContent = 'online';  if (pendingCount()) syncAll(false); });
+window.addEventListener('online',  () => { $('#net-state').textContent = 'online'; syncAll(false); });
 window.addEventListener('offline', () => { $('#net-state').textContent = 'offline'; });
 
 /* ══ LOG BOOK ═════════════════════════════════════════════════════════ */
@@ -718,5 +733,5 @@ if (cfg.endpoint) paintEndpointState('Endpoint ready — press Sync now to check
 show('new');
 refreshCounts();
 updateProgress();
-if (cfg.endpoint && navigator.onLine && pendingCount()) syncAll(false);
+if (cfg.endpoint && navigator.onLine) syncAll(false);   // pull the log too, not only push
 })();
