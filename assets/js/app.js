@@ -186,6 +186,30 @@ $('#btn-sync').addEventListener('click', () => loadRows(true));
 addEventListener('online', () => { $('#net-state').textContent = 'online'; loadRows(); });
 addEventListener('offline', () => { $('#net-state').textContent = 'offline'; });
 
+
+/* ── live updates ──────────────────────────────────────────────────────
+   Apps Script cannot push, so this polls — but only a tiny revision marker,
+   and only while the tab is on screen. The full list is fetched just when
+   that marker moves, which keeps the script's daily quota intact. A slower
+   full refresh also runs, to catch edits typed straight into the sheet. */
+let rev = null, polling = false;
+
+async function pollRev() {
+  if (polling || document.hidden) return;
+  polling = true;
+  try {
+    const d = await callSheet({ action: 'rev' });
+    if (rev === null) rev = d.rev;
+    else if (d.rev !== rev) { rev = d.rev; await loadRows(); }
+  } catch (ignore) {
+    /* a failed poll is not worth telling anyone about */
+  } finally { polling = false; }
+}
+
+setInterval(pollRev, 20000);
+setInterval(() => { if (!document.hidden) loadRows(); }, 300000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollRev(); });
+
 /* ══ FORM ═════════════════════════════════════════════════════════════ */
 const form = $('#entry-form');
 let category = '', priority = 'Medium', photoData = '';

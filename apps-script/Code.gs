@@ -16,6 +16,12 @@
  *   {action:'append', entry:{...}}     → add a row (idempotent by entry.id)
  *   {action:'update', entry:{...}}     → update the row with that id
  *   {action:'list'}                    → return the most recent rows
+ *   {action:'rev'}                     → a revision marker, for cheap polling
+ *
+ * Live updates: clients poll 'rev' every 15-30s and pull the full list only
+ * when it moves. onEdit keeps that marker honest when a person types into the
+ * sheet directly. onChange is optional — add it under Triggers to catch rows
+ * inserted or deleted by hand.
  *   {action:'finish', id:'...'}        → stamp the finish time and duration
  *   {action:'delete', id:'...'}        → remove a row and its pictures
  *
@@ -78,6 +84,7 @@ function doPost(e) {
       case 'finish': return reply(finish_(body.id));
       case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_());
+      case 'rev':    return reply(rev_());
       default:       return reply({ ok: false, error: 'Unknown action: ' + body.action });
     }
   } catch (err) {
@@ -93,6 +100,40 @@ function doGet() {
 }
 
 /* ── actions ───────────────────────────────────────────────────────── */
+
+/**
+ * A marker that changes whenever a row does. Clients poll this instead of
+ * re-downloading the whole log book: it touches script properties only, never
+ * the spreadsheet, so it costs almost no execution time.
+ */
+function rev_() {
+  var p = PropertiesService.getScriptProperties();
+  return { ok: true, rev: p.getProperty('rev') || '0' };
+}
+
+/**
+ * Typing straight into the sheet has to count as a change too, otherwise the
+ * app would only notice edits it made itself. This is a simple trigger: it
+ * runs on every manual edit, with no installation step.
+ */
+function onEdit(e) {
+  try {
+    if (e && e.range && e.range.getSheet().getName() !== TAB_NAME) return;
+    bump_();
+  } catch (ignore) {}
+}
+
+/** Fires on structural changes — rows inserted or removed by hand. */
+function onChange(e) {
+  bump_();
+}
+
+/** Called after anything that changes a row. */
+function bump_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty('rev', String(Date.now()));
+  } catch (ignore) {}
+}
 
 function ping_() {
   var s = sheet_();
@@ -111,6 +152,7 @@ function append_(entry) {
   s.appendRow(toRow_(entry));
   var row = s.getLastRow();
   attach_(s, row, entry);
+  bump_();
   return { ok: true, row: row, id: entry.id, timeOut: entry.timeOut, startedAt: now.toISOString() };
 }
 
@@ -123,6 +165,7 @@ function update_(entry) {
   var existing = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
   s.getRange(row, 1, 1, HEADERS.length).setValues([toRow_(entry, existing)]);
   attach_(s, row, entry);
+  bump_();
   return { ok: true, row: row, id: entry.id };
 }
 
@@ -145,6 +188,7 @@ function finish_(id) {
   s.getRange(row, COL_FINISHED).setValue(now);
   s.getRange(row, COL_STATUS).setValue('Resolved');
 
+  bump_();
   return {
     ok: true, id: id, row: row,
     timeReturned: fmtTime_(now), duration: dur, finishedAt: now.toISOString(), status: 'Resolved'
@@ -176,6 +220,7 @@ function delete_(id) {
   } catch (ignore) {}                       // a stuck picture must not block the delete
 
   s.deleteRow(row);
+  bump_();
   return { ok: true, deleted: id, row: row };
 }
 
