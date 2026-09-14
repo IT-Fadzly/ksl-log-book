@@ -26,8 +26,7 @@ const I18N = {
     'form.kicker': 'Permohonan Servis', 'form.title': 'Apa yang anda perlukan? 👋',
     'form.sub': 'Kira-kira seminit. Setiap entri disimpan terus ke Google Sheet.',
     'form.ticket': 'Tiket', 'form.auto': 'auto',
-    'f.when': 'Bila ia berlaku?', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa direkod',
-    'f.timeout': 'Masa keluar', 'f.timeback': 'Masa kembali',
+    'f.when': 'Bila ia berlaku?', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa',
     'f.who': 'Siapa yang bertanya?', 'f.name': 'Nama pengguna', 'f.dept': 'Jabatan',
     'f.what': 'Apa masalahnya?', 'f.cat': 'Kategori', 'f.pri': 'Keutamaan', 'f.req': 'Permohonan pengguna',
     'f.reqhint': 'Terangkan isu atau aktiviti', 'f.photo': 'Bukti gambar (pilihan)',
@@ -115,15 +114,24 @@ const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 const ST_CLASS  = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resolved': 'st-resolved' };
 
-/** "08:30" + "10:05" -> "1h 35m". Crossing midnight is treated as the next day. */
-function duration(out, back) {
-  if (!out || !back) return '';
-  const [h1, m1] = out.split(':').map(Number), [h2, m2] = back.split(':').map(Number);
-  if ([h1, m1, h2, m2].some(isNaN)) return '';
-  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
-  if (mins < 0) mins += 24 * 60;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return h ? `${h}h ${m}m` : `${m}m`;
+/** How long a task has been running, or took. The sheet keeps the clock. */
+function humanDur(ms) {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 1) return 'under a minute';
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+function timing(r) {
+  if (r.finishedAt || r.duration) {
+    const took = r.duration || (r.startedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
+    return took ? `<span class="text-[11px] text-subink">✅ took <b>${esc(took)}</b></span>` : '';
+  }
+  if (r.startedAt) {
+    return `<span class="text-[11px]" style="color:var(--c-orange)">⏱ running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b></span>`;
+  }
+  return '';
 }
 
 /** Ticket numbers come from the sheet, so two phones never mint the same one. */
@@ -321,7 +329,6 @@ form.addEventListener('submit', async e => {
     id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     ticket: $('#ticket-id').textContent,
     date: form.date.value, time: form.time.value,
-    timeOut: form.timeOut.value, timeReturned: form.timeReturned.value,
     name: form.name.value.trim(), department: form.department.value,
     category, priority, request: form.request.value.trim(),
     status: 'Open', signature: signaturePNG(), photo: photoData,
@@ -408,7 +415,7 @@ function renderLog() {
           <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
           <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
           <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)} · ${esc(r.category)}</p>
-          ${r.timeOut || r.timeReturned ? `<p class="mt-1 text-[11px] text-subink">🕒 out ${esc(r.timeOut || '—')} · back ${esc(r.timeReturned || 'still out')}${duration(r.timeOut, r.timeReturned) ? ` · <b>${duration(r.timeOut, r.timeReturned)}</b>` : ''}</p>` : ''}
+          ${timing(r) ? `<p class="mt-1">${timing(r)}</p>` : ''}
         </div>
         ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
       </div>
@@ -437,11 +444,11 @@ function openDetail(id) {
       <span class="chip">${esc(r.category)}</span>
       <span class="chip" style="border-color:${PRI_COLOR[r.priority]};color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
     </div>
-    ${r.timeOut || r.timeReturned ? `
+    ${r.timeOut ? `
     <div class="mb-3 grid grid-cols-3 gap-2 rounded-xl border border-line bg-panel/60 p-3 text-center">
-      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Out</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeOut || '—')}</p></div>
-      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Returned</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeReturned || '—')}</p></div>
-      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Duration</p><p class="font-mono text-[15px] font-semibold">${duration(r.timeOut, r.timeReturned) || (r.timeOut ? 'still out' : '—')}</p></div>
+      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Started</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeOut)}</p></div>
+      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Finished</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeReturned || '—')}</p></div>
+      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Took</p><p class="font-mono text-[15px] font-semibold">${esc(r.duration || (r.startedAt ? humanDur(Date.now() - Date.parse(r.startedAt)) + '…' : '—'))}</p></div>
     </div>` : ''}
     <p class="whitespace-pre-wrap rounded-xl border border-line bg-panel/60 p-3 text-[13px] leading-relaxed">${esc(r.request)}</p>
     ${r.photo ? `<img src="${r.photo}" alt="attached photo" class="mt-3 w-full rounded-xl border border-line object-cover" />` : ''}
@@ -473,7 +480,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 /* ── export (of what is on screen; the sheet stays the record) ─────── */
 $('#btn-export').addEventListener('click', () => {
   if (!rows.length) return toast('Nothing to export.', 'err');
-  const cols = ['ticket', 'date', 'time', 'timeOut', 'timeReturned', 'name', 'department', 'category', 'priority', 'status', 'request', 'created'];
+  const cols = ['ticket', 'date', 'time', 'timeOut', 'timeReturned', 'duration', 'name', 'department', 'category', 'priority', 'status', 'request', 'created'];
   const csv = [cols.join(',')].concat(rows.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');

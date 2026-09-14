@@ -39,7 +39,7 @@ tailwind.config = {
   }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=8" />
+<link rel="stylesheet" href="assets/css/style.css?v=9" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -121,17 +121,7 @@ tailwind.config = {
           </label>
           <label class="fl">
             <input type="time" name="time" required class="input" />
-            <span class="fl-label fl-static" data-i18n="f.time">Time logged</span>
-          </label>
-        </div>
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-          <label class="fl">
-            <input type="time" name="timeOut" class="input" />
-            <span class="fl-label fl-static" data-i18n="f.timeout">Time out</span>
-          </label>
-          <label class="fl">
-            <input type="time" name="timeReturned" class="input" />
-            <span class="fl-label fl-static" data-i18n="f.timeback">Time returned</span>
+            <span class="fl-label fl-static" data-i18n="f.time">Time</span>
           </label>
         </div>
       </div>
@@ -255,7 +245,10 @@ tailwind.config = {
         <select id="f-status" class="mini-select"><option value="">All status</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Resolved">Resolved</option></select>
         <select id="f-dept" class="mini-select"><option value="">All departments</option></select>
         <select id="f-sort" class="mini-select"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="pri">By priority</option></select>
-        <button id="btn-export" class="chip chip-ghost ml-auto" data-i18n="log.export">Export CSV</button>
+        <div class="ml-auto flex gap-2">
+          <a href="it.html" class="chip chip-ghost">🛠 IT Desk ↗</a>
+          <button id="btn-export" class="chip chip-ghost" data-i18n="log.export">Export CSV</button>
+        </div>
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <span class="text-[12px] font-medium text-muted" data-i18n="log.dates">Dates</span>
@@ -299,6 +292,6 @@ tailwind.config = {
 
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-6"></div>
 
-<script src="assets/js/app.js?v=8"></script>
+<script src="assets/js/app.js?v=9"></script>
 </body>
 </html>

@@ -16,6 +16,7 @@
  *   {action:'append', entry:{...}}     → add a row (idempotent by entry.id)
  *   {action:'update', entry:{...}}     → update the row with that id
  *   {action:'list'}                    → return the most recent rows
+ *   {action:'finish', id:'...'}        → stamp the finish time and duration
  *   {action:'delete', id:'...'}        → remove a row and its pictures
  *
  * 'update' and 'delete' are the admin actions. Set ADMIN_KEY below and they
@@ -31,7 +32,8 @@ var IMAGES   = true;                       // false = store "(signed)" text inst
 var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
   'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
-  'Synced At', 'Signature Data', 'Photo Data', 'Time Out', 'Time Returned'
+  'Synced At', 'Signature Data', 'Photo Data', 'Time Out', 'Time Returned',
+  'Duration', 'Started At', 'Finished At'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
@@ -40,6 +42,16 @@ var COL_SIG_DATA   = 16;     /* hidden: the signature as a data URL, so other
                                 cannot be read by the API, only written */
 var COL_PHOTO_DATA = 17;     /* hidden: same idea for the photo */
 var CELL_LIMIT    = 45000;   /* a cell holds 50,000 chars; leave headroom */
+
+/* The clock is kept by this script, not by the phone: a task starts when the
+   row is appended and stops when 'finish' arrives, so every duration is
+   measured on one clock no matter whose device filed it. */
+var COL_STATUS    = 10;
+var COL_TIME_OUT  = 18;
+var COL_TIME_BACK = 19;
+var COL_DURATION  = 20;
+var COL_STARTED   = 21;
+var COL_FINISHED  = 22;
 
 /* New columns are appended, never inserted: the row layout is addressed by
    position, so moving a column would misread every existing row. */
@@ -63,6 +75,7 @@ function doPost(e) {
       case 'ping':   return reply(ping_());
       case 'append': return reply(append_(body.entry));
       case 'update': return reply(update_(body.entry));
+      case 'finish': return reply(finish_(body.id));
       case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_());
       default:       return reply({ ok: false, error: 'Unknown action: ' + body.action });
@@ -91,10 +104,14 @@ function append_(entry) {
   var s = sheet_();
   if (findRow_(s, entry.id)) return update_(entry);      // already there → treat as an update
 
+  var now = new Date();
+  entry.startedAt = now;                                 // server clock, not the phone's
+  entry.timeOut = fmtTime_(now);
+
   s.appendRow(toRow_(entry));
   var row = s.getLastRow();
   attach_(s, row, entry);
-  return { ok: true, row: row, id: entry.id };
+  return { ok: true, row: row, id: entry.id, timeOut: entry.timeOut, startedAt: now.toISOString() };
 }
 
 function update_(entry) {
@@ -107,6 +124,41 @@ function update_(entry) {
   s.getRange(row, 1, 1, HEADERS.length).setValues([toRow_(entry, existing)]);
   attach_(s, row, entry);
   return { ok: true, row: row, id: entry.id };
+}
+
+/** Stop the clock on a task: finish time, duration, and status Resolved. */
+function finish_(id) {
+  if (!id) return { ok: false, error: 'id is required' };
+  var s = sheet_();
+  var row = findRow_(s, id);
+  if (!row) return { ok: false, error: 'Not found: ' + id };
+
+  var vals = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  if (vals[COL_FINISHED - 1]) return { ok: false, error: 'This task is already finished' };
+
+  var started = vals[COL_STARTED - 1] ? new Date(vals[COL_STARTED - 1]) : null;
+  var now = new Date();
+  var dur = started ? humanDur_(now.getTime() - started.getTime()) : '';
+
+  s.getRange(row, COL_TIME_BACK).setValue(fmtTime_(now));
+  s.getRange(row, COL_DURATION).setValue(dur);
+  s.getRange(row, COL_FINISHED).setValue(now);
+  s.getRange(row, COL_STATUS).setValue('Resolved');
+
+  return {
+    ok: true, id: id, row: row,
+    timeReturned: fmtTime_(now), duration: dur, finishedAt: now.toISOString(), status: 'Resolved'
+  };
+}
+
+/** 5_700_000 ms -> "1h 35m". Anything under a minute reads as "just now". */
+function humanDur_(ms) {
+  var mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 1) return 'under a minute';
+  var d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  return m + 'm';
 }
 
 /** Remove a row and any pictures anchored to it. */
@@ -135,18 +187,27 @@ function list_() {
   var start = Math.max(2, last - MAX_LIST + 1);
   var values = s.getRange(start, 1, last - start + 1, HEADERS.length).getValues();
 
-  var rows = values.map(function (r) {
-    return {
-      id: String(r[0]), ticket: String(r[1]),
-      date: fmtDate_(r[2]), time: fmtTime_(r[3]),
-      name: String(r[4]), department: String(r[5]), category: String(r[6]),
-      priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
-      signature: String(r[15] || ''),                  // readable copies - the pictures
-      photo: String(r[16] || ''),                      // in the cells cannot be read back
-      timeOut: fmtTime_(r[17]), timeReturned: fmtTime_(r[18]),
-      device: String(r[12]), created: r[13] ? new Date(r[13]).toISOString() : ''
-    };
-  }).filter(function (r) { return r.id; });
+  // One malformed cell must not cost the whole listing, so each row is
+  // mapped defensively and a row that still fails is skipped.
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    try {
+      var r = values[i];
+      if (!r[0]) continue;
+      rows.push({
+        id: String(r[0]), ticket: String(r[1]),
+        date: fmtDate_(r[2]), time: fmtTime_(r[3]),
+        name: String(r[4]), department: String(r[5]), category: String(r[6]),
+        priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
+        signature: String(r[15] || ''),                // readable copies - the pictures
+        photo: String(r[16] || ''),                    // in the cells cannot be read back
+        timeOut: fmtTime_(r[17]), timeReturned: fmtTime_(r[18]),
+        duration: String(r[19] || ''),
+        startedAt: iso_(r[20]), finishedAt: iso_(r[21]),
+        device: String(r[12]), created: iso_(r[13])
+      });
+    } catch (ignore) {}
+  }
 
   return { ok: true, rows: rows };
 }
@@ -180,6 +241,7 @@ function sheet_() {
     s.setColumnWidth(COL_SIGNATURE, 190);
     s.setColumnWidth(COL_PHOTO, 190);
     s.hideColumns(COL_SIG_DATA, 2);                    // machine-readable, not for humans
+    s.hideColumns(COL_STARTED, 2);                     // exact stamps; the sheet shows HH:mm
   }
   return s;
 }
@@ -208,12 +270,15 @@ function toRow_(entry, existing) {
     entry.signature ? 'signed' : (existing[10] || ''),
     entry.photo     ? 'photo'  : (existing[11] || ''),
     entry.device || '',
-    entry.created ? new Date(entry.created) : new Date(),
+    safeDate_(entry.created),
     new Date(),
     entry.signature && entry.signature.length <= CELL_LIMIT ? entry.signature : (existing[15] || ''),
     entry.photo     && entry.photo.length     <= CELL_LIMIT ? entry.photo     : (existing[16] || ''),
-    entry.timeOut || '',
-    entry.timeReturned || ''
+    entry.timeOut      || existing[17] || '',
+    entry.timeReturned || existing[18] || '',
+    entry.duration     || existing[19] || '',
+    entry.startedAt    || existing[20] || '',
+    entry.finishedAt   || existing[21] || ''
   ];
 }
 
@@ -239,6 +304,19 @@ function placeImage_(s, row, col, dataUrl, w, h) {
   } catch (err) {
     s.getRange(row, col).setNote('Image could not be embedded: ' + err);
   }
+}
+
+/** A usable Date: the value if it parses, otherwise now. */
+function safeDate_(v) {
+  var d = v ? new Date(v) : null;
+  return (d && !isNaN(d.getTime())) ? d : new Date();
+}
+
+/** An ISO string, or '' for anything that is not a real date. */
+function iso_(v) {
+  if (!v) return '';
+  var d = (v instanceof Date) ? v : new Date(v);
+  return isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
 function fmtDate_(v) {
