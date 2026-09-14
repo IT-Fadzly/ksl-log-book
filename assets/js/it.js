@@ -13,6 +13,10 @@ const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/* Drawn marks rather than emoji: they take the surrounding colour and stay
+   crisp at any size, and every platform renders them identically. */
+const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-[14px] w-[14px] align-[-2px]"><path d="M4 13.5 9.8 19.5 20 5"/></svg>';
+const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="inline-block h-[13px] w-[13px] align-[-2px]"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.3 2"/></svg>';
 const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
@@ -168,9 +172,9 @@ function render() {
 
       <div class="mt-3 flex flex-wrap items-center gap-3">
         ${done
-          ? `<span class="pill st-resolved"><span class="pill-dot"></span>Done in ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
+          ? `<span class="pill st-resolved">${TICK} Done in ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
           : `<span class="tick font-mono text-[13px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt || '')}">⏱ ${r.startedAt ? esc(humanDur(Date.now() - Date.parse(r.startedAt))) : 'no start time'}</span>
-             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="finish" data-id="${esc(r.id)}">Finish ✓</button>`}
+             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`}
       </div>
     </article>`;
   }).join('');
@@ -181,7 +185,7 @@ function render() {
 setInterval(() => {
   $$('.tick').forEach(el => {
     const t = el.dataset.started; if (!t) return;
-    el.textContent = '⏱ ' + humanDur(Date.now() - Date.parse(t));
+    el.innerHTML = CLOCK + ' ' + humanDur(Date.now() - Date.parse(t));
   });
 }, 30000);
 
@@ -202,7 +206,7 @@ $('#list').addEventListener('click', async e => {
     toast(`${r.ticket} done in ${res.duration}`);
     render(); renderStats();
   } catch (err) {
-    b.disabled = false; b.textContent = 'Finish ✓';
+    b.disabled = false; b.innerHTML = 'Finish ' + TICK;
     toast('Could not finish: ' + err.message, 'err', 5000);
   }
 });

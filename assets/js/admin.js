@@ -22,6 +22,11 @@ const ST_CLASS    = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resol
 
 let rows = [], adminKey = '';
 
+/* Drawn marks rather than emoji: they take the surrounding colour and stay
+   crisp at any size, and every platform renders them identically. */
+const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-[14px] w-[14px] align-[-2px]"><path d="M4 13.5 9.8 19.5 20 5"/></svg>';
+const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="inline-block h-[13px] w-[13px] align-[-2px]"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.3 2"/></svg>';
+
 /** The sheet keeps the clock; this only formats what it sends back. */
 function humanDur(ms) {
   const mins = Math.max(0, Math.round(ms / 60000));
@@ -34,11 +39,11 @@ function humanDur(ms) {
 function timing(r) {
   if (r.duration || r.finishedAt) {
     const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
-    return `✅ ${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>${took ? ` · took <b>${esc(took)}</b>` : ''}`;
+    return `<span class="inline-flex items-center gap-1" style="color:var(--c-aqua)">${TICK} ${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
   }
   if (r.startedAt || r.timeOut) {
     const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
-    return `⏱ started ${esc(r.timeOut || '—')}${run}`;
+    return `<span class="inline-flex items-center gap-1" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}</span>`;
   }
   return '';
 }

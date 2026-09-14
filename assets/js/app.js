@@ -114,6 +114,11 @@ const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 const ST_CLASS  = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resolved': 'st-resolved' };
 
+/* Drawn marks rather than emoji: they take the surrounding colour and stay
+   crisp at any size, and every platform renders them identically. */
+const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-[14px] w-[14px] align-[-2px]"><path d="M4 13.5 9.8 19.5 20 5"/></svg>';
+const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="inline-block h-[13px] w-[13px] align-[-2px]"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.3 2"/></svg>';
+
 /** How long a task has been running, or took. The sheet keeps the clock. */
 function humanDur(ms) {
   const mins = Math.max(0, Math.round(ms / 60000));
@@ -127,11 +132,11 @@ function timing(r) {
   if (r.finishedAt || r.duration) {
     const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
     const span = `${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>`;
-    return `<span class="text-[11px]" style="color:var(--c-aqua)">✅ ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-aqua)">${TICK} ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
   }
   if (r.startedAt || r.timeOut) {
     const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
-    return `<span class="text-[11px]" style="color:var(--c-orange)">⏱ started ${esc(r.timeOut || '—')}${run}</span>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}</span>`;
   }
   return '';
 }
