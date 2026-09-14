@@ -94,7 +94,7 @@ tailwind.config = {
         <div>
           <p class="text-[11px] uppercase tracking-[.22em] text-neon" data-i18n="form.kicker">Service request</p>
           <h2 class="mt-1 font-display text-2xl font-bold tracking-tight" data-i18n="form.title">What do you need? 👋</h2>
-          <p class="mt-1 text-[13px] text-subink" data-i18n="form.sub">Takes about a minute. Works offline — it syncs itself when you're back on.</p>
+          <p class="mt-1 text-[13px] text-subink" data-i18n="form.sub">Takes about a minute. Saved straight into the Google Sheet.</p>
         </div>
         <div class="hidden shrink-0 sm:block">
           <div class="progress-ring" id="ring"><span id="ring-val" class="font-mono text-[13px] font-semibold">0%</span></div>
@@ -121,9 +121,20 @@ tailwind.config = {
           </label>
           <label class="fl">
             <input type="time" name="time" required class="input" />
-            <span class="fl-label fl-static" data-i18n="f.time">Time</span>
+            <span class="fl-label fl-static" data-i18n="f.time">Time logged</span>
           </label>
         </div>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+          <label class="fl">
+            <input type="time" name="timeOut" class="input" />
+            <span class="fl-label fl-static" data-i18n="f.timeout">Time out</span>
+          </label>
+          <label class="fl">
+            <input type="time" name="timeReturned" class="input" />
+            <span class="fl-label fl-static" data-i18n="f.timeback">Time returned</span>
+          </label>
+        </div>
+        <p class="mt-2 text-[11px] text-muted" data-i18n="f.timehint">Leave the return time empty if you are still out — an admin can fill it in later.</p>
       </div>
 
       <div class="glass p-5">

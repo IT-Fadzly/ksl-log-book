@@ -31,7 +31,7 @@ var IMAGES   = true;                       // false = store "(signed)" text inst
 var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
   'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
-  'Synced At', 'Signature Data', 'Photo Data'
+  'Synced At', 'Signature Data', 'Photo Data', 'Time Out', 'Time Returned'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
@@ -40,6 +40,9 @@ var COL_SIG_DATA   = 16;     /* hidden: the signature as a data URL, so other
                                 cannot be read by the API, only written */
 var COL_PHOTO_DATA = 17;     /* hidden: same idea for the photo */
 var CELL_LIMIT    = 45000;   /* a cell holds 50,000 chars; leave headroom */
+
+/* New columns are appended, never inserted: the row layout is addressed by
+   position, so moving a column would misread every existing row. */
 
 /* ── entry points ──────────────────────────────────────────────────── */
 
@@ -140,6 +143,7 @@ function list_() {
       priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
       signature: String(r[15] || ''),                  // readable copies - the pictures
       photo: String(r[16] || ''),                      // in the cells cannot be read back
+      timeOut: fmtTime_(r[17]), timeReturned: fmtTime_(r[18]),
       device: String(r[12]), created: r[13] ? new Date(r[13]).toISOString() : ''
     };
   }).filter(function (r) { return r.id; });
@@ -207,7 +211,9 @@ function toRow_(entry, existing) {
     entry.created ? new Date(entry.created) : new Date(),
     new Date(),
     entry.signature && entry.signature.length <= CELL_LIMIT ? entry.signature : (existing[15] || ''),
-    entry.photo     && entry.photo.length     <= CELL_LIMIT ? entry.photo     : (existing[16] || '')
+    entry.photo     && entry.photo.length     <= CELL_LIMIT ? entry.photo     : (existing[16] || ''),
+    entry.timeOut || '',
+    entry.timeReturned || ''
   ];
 }
 

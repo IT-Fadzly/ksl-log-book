@@ -22,6 +22,17 @@ const ST_CLASS    = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resol
 
 let rows = [], adminKey = '';
 
+/** "08:30" + "10:05" -> "1h 35m". Crossing midnight is treated as the next day. */
+function duration(out, back) {
+  if (!out || !back) return '';
+  const [h1, m1] = out.split(':').map(Number), [h2, m2] = back.split(':').map(Number);
+  if ([h1, m1, h2, m2].some(isNaN)) return '';
+  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins < 0) mins += 24 * 60;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
 /* ── toast ─────────────────────────────────────────────────────────── */
 function toast(msg, kind = 'ok', ms = 3200) {
   const el = document.createElement('div');
@@ -165,6 +176,7 @@ function render() {
           <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
           <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
           <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)}</p>
+          ${r.timeOut || r.timeReturned ? `<p class="mt-1 text-[11px] text-subink">🕒 out ${esc(r.timeOut || '—')} · back ${esc(r.timeReturned || 'still out')}${duration(r.timeOut, r.timeReturned) ? ` · <b>${duration(r.timeOut, r.timeReturned)}</b>` : ''}</p>` : ''}
         </div>
         ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
       </div>
@@ -223,6 +235,10 @@ function openEdit(r) {
         <label class="fl"><input name="date" type="date" value="${esc(r.date)}" class="input" /><span class="fl-label fl-static">Date</span></label>
         <label class="fl"><input name="time" type="time" value="${esc(r.time)}" class="input" /><span class="fl-label fl-static">Time</span></label>
       </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="fl"><input name="timeOut" type="time" value="${esc(r.timeOut || '')}" class="input" /><span class="fl-label fl-static">Time out</span></label>
+        <label class="fl"><input name="timeReturned" type="time" value="${esc(r.timeReturned || '')}" class="input" /><span class="fl-label fl-static">Time returned</span></label>
+      </div>
       <label class="fl block"><input name="name" value="${esc(r.name)}" placeholder=" " class="input peer" /><span class="fl-label">Name</span></label>
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="fl"><select name="department" class="input">${opts(DEPARTMENTS, r.department)}</select><span class="fl-label fl-static">Department</span></label>
@@ -250,7 +266,9 @@ function openEdit(r) {
     ev.preventDefault();
     const f = ev.target, btn = f.querySelector('button[type=submit]');
     const patch = {
-      date: f.date.value, time: f.time.value, name: f.name.value.trim(),
+      date: f.date.value, time: f.time.value,
+      timeOut: f.timeOut.value, timeReturned: f.timeReturned.value,
+      name: f.name.value.trim(),
       department: f.department.value, category: f.category.value,
       priority: f.priority.value, status: f.status.value, request: f.request.value.trim()
     };
