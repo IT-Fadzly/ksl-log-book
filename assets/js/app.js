@@ -125,11 +125,13 @@ function humanDur(ms) {
 }
 function timing(r) {
   if (r.finishedAt || r.duration) {
-    const took = r.duration || (r.startedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
-    return took ? `<span class="text-[11px] text-subink">✅ took <b>${esc(took)}</b></span>` : '';
+    const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
+    const span = `${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>`;
+    return `<span class="text-[11px]" style="color:var(--c-aqua)">✅ ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
   }
-  if (r.startedAt) {
-    return `<span class="text-[11px]" style="color:var(--c-orange)">⏱ running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b></span>`;
+  if (r.startedAt || r.timeOut) {
+    const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
+    return `<span class="text-[11px]" style="color:var(--c-orange)">⏱ started ${esc(r.timeOut || '—')}${run}</span>`;
   }
   return '';
 }

@@ -32,8 +32,14 @@ function humanDur(ms) {
   return `${m}m`;
 }
 function timing(r) {
-  if (r.duration || r.finishedAt) return `✅ took <b>${esc(r.duration || humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)))}</b>`;
-  if (r.startedAt) return `⏱ running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>`;
+  if (r.duration || r.finishedAt) {
+    const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
+    return `✅ ${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>${took ? ` · took <b>${esc(took)}</b>` : ''}`;
+  }
+  if (r.startedAt || r.timeOut) {
+    const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
+    return `⏱ started ${esc(r.timeOut || '—')}${run}`;
+  }
   return '';
 }
 
