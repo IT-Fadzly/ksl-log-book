@@ -32,7 +32,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=9" />
+<link rel="stylesheet" href="assets/css/style.css?v=10" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -90,6 +90,15 @@ tailwind.config = {
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"></div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 
-<script src="assets/js/it.js?v=9"></script>
+<script>
+  /* Load the app with a fresh URL every time. The pages are meant to be
+     uncached, and a fixed ?v= number only works if it is remembered to be
+     bumped — this cannot be forgotten. */
+  (function () {
+    var s = document.createElement('script');
+    s.src = 'assets/js/it.js?t=' + Date.now();
+    document.body.appendChild(s);
+  })();
+</script>
 </body>
 </html>
