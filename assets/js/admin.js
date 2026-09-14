@@ -12,7 +12,7 @@ const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DEPARTMENTS = ['Finance', 'F&B', 'Sales', 'Kitchen', 'Marketing', 'Reservation',
+const DEPARTMENTS = ['IT', 'Finance', 'F&B', 'Sales', 'Kitchen', 'Marketing', 'Reservation',
                      'Front Office', 'Security', 'Onsen Spa', 'HR', 'Maintenance', 'Receiving'];
 const CATEGORIES  = ['Hardware', 'Software', 'System', 'Network', 'Access', 'Maintenance', 'Other'];
 const PRIORITIES  = ['Low', 'Medium', 'High', 'Critical'];
