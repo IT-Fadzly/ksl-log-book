@@ -93,7 +93,7 @@ async function load(loud) {
   $('#state').textContent = 'Loading…';
   $('#btn-reload svg').classList.add('spin');
   try {
-    const data = await call({ action: 'list' });
+    const data = await call({ action: 'list', lite: true });
     rows = (data.rows || []).slice().reverse();
     const keep = $('#f-dept').value;
     const depts = [...new Set(rows.map(r => r.department).filter(Boolean))].sort();
@@ -131,6 +131,38 @@ function renderStats() {
   $('#s-avg').style.fontSize = spans.length ? '1.5rem' : '2.35rem';
 }
 
+
+/* ── images on demand ──────────────────────────────────────────────────
+   The listing arrives without pictures so a refresh stays small. Whatever is
+   actually on screen asks for its images once, and they are kept for the rest
+   of the session. */
+const asked = new Set();
+
+async function fetchMedia(ids) {
+  const want = ids.filter(id => id && !asked.has(id)).slice(0, 20);
+  if (!want.length) return false;
+  want.forEach(id => asked.add(id));
+  try {
+    const { media } = await call({ action: 'media', ids: want });
+    let got = false;
+    Object.keys(media || {}).forEach(id => {
+      const row = rows.find(r => r.id === id);
+      if (row) { Object.assign(row, media[id]); got = true; }
+    });
+    return got;
+  } catch {
+    want.forEach(id => asked.delete(id));      // let a later pass try again
+    return false;
+  }
+}
+
+/** Pull the pictures for the rows currently rendered, then repaint once. */
+function hydrateVisible(list) {
+  const ids = list.filter(r => (r.hasSignature || r.hasPhoto) && !r.signature && !r.photo)
+                  .slice(0, 12).map(r => r.id);
+  if (ids.length) fetchMedia(ids).then(got => { if (got) render(); });
+}
+
 /* ── list ──────────────────────────────────────────────────────────── */
 $('#tab-group').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]'); if (!b) return;
@@ -151,6 +183,7 @@ function visible() {
 
 function render() {
   const list = visible();
+  hydrateVisible(list);
   $('#empty').classList.toggle('hidden', list.length > 0);
   $('#list').innerHTML = list.map((r, i) => {
     const done = isDone(r);
@@ -231,7 +264,7 @@ async function pollRev() {
   } finally { polling = false; }
 }
 
-setInterval(pollRev, 15000);
+setInterval(pollRev, 7000);
 setInterval(() => { if (!document.hidden) load(); }, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollRev(); });
 

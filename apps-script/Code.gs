@@ -15,7 +15,8 @@
  *   {action:'ping'}                    → connection test
  *   {action:'append', entry:{...}}     → add a row (idempotent by entry.id)
  *   {action:'update', entry:{...}}     → update the row with that id
- *   {action:'list'}                    → return the most recent rows
+ *   {action:'list', lite:true}         → rows without the images (fast)
+ *   {action:'media', ids:[...]}        → the images for those rows, on demand
  *   {action:'rev'}                     → a revision marker, for cheap polling
  *
  * Live updates: clients poll 'rev' every 15-30s and pull the full list only
@@ -83,7 +84,8 @@ function doPost(e) {
       case 'update': return reply(update_(body.entry));
       case 'finish': return reply(finish_(body.id));
       case 'delete': return reply(delete_(body.id));
-      case 'list':   return reply(list_());
+      case 'list':   return reply(list_(body.lite));
+      case 'media':  return reply(media_(body.ids));
       case 'rev':    return reply(rev_());
       default:       return reply({ ok: false, error: 'Unknown action: ' + body.action });
     }
@@ -224,7 +226,13 @@ function delete_(id) {
   return { ok: true, deleted: id, row: row };
 }
 
-function list_() {
+/**
+ * The listing. In lite mode the signature and photo are left out and only a
+ * flag says they exist — a row with images is 20-45 KB, so sending them on
+ * every refresh is what makes the app feel slow. The pictures are fetched
+ * separately, for the handful of rows actually on screen.
+ */
+function list_(lite) {
   var s = sheet_();
   var last = s.getLastRow();
   if (last < 2) return { ok: true, rows: [] };
@@ -244,8 +252,9 @@ function list_() {
         date: fmtDate_(r[2]), time: fmtTime_(r[3]),
         name: String(r[4]), department: String(r[5]), category: String(r[6]),
         priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
-        signature: String(r[15] || ''),                // readable copies - the pictures
-        photo: String(r[16] || ''),                    // in the cells cannot be read back
+        signature: lite ? '' : String(r[15] || ''),    // readable copies - the pictures
+        photo:     lite ? '' : String(r[16] || ''),    // in the cells cannot be read back
+        hasSignature: !!r[15], hasPhoto: !!r[16],
         timeOut: fmtTime_(r[17]), timeReturned: fmtTime_(r[18]),
         duration: String(r[19] || ''),
         startedAt: iso_(r[20]), finishedAt: iso_(r[21]),
@@ -255,6 +264,26 @@ function list_() {
   }
 
   return { ok: true, rows: rows };
+}
+
+/** The images for a handful of rows, by id. Capped so one call stays small. */
+function media_(ids) {
+  if (!ids || !ids.length) return { ok: true, media: {} };
+  var s = sheet_();
+  var last = s.getLastRow();
+  if (last < 2) return { ok: true, media: {} };
+
+  var wanted = {};
+  for (var i = 0; i < Math.min(ids.length, 20); i++) wanted[String(ids[i])] = true;
+
+  var values = s.getRange(2, 1, last - 1, HEADERS.length).getValues();
+  var out = {};
+  for (var j = 0; j < values.length; j++) {
+    var id = String(values[j][0]);
+    if (!wanted[id]) continue;
+    out[id] = { signature: String(values[j][15] || ''), photo: String(values[j][16] || '') };
+  }
+  return { ok: true, media: out };
 }
 
 /* ── helpers ───────────────────────────────────────────────────────── */

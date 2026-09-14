@@ -85,7 +85,7 @@ async function call(payload, retried) {
 async function load() {
   $('#state').textContent = 'Loading…';
   try {
-    const data = await call({ action: 'list' });
+    const data = await call({ action: 'list', lite: true });
     rows = (data.rows || []).slice().reverse();          // newest first
     $('#count').textContent = rows.length;
     $('#state').textContent = `Loaded ${rows.length} rows`;
@@ -99,6 +99,38 @@ async function load() {
     $('#state').textContent = '';
     toast('Load failed: ' + err.message, 'err', 5000);
   }
+}
+
+
+/* ── images on demand ──────────────────────────────────────────────────
+   The listing arrives without pictures so a refresh stays small. Whatever is
+   actually on screen asks for its images once, and they are kept for the rest
+   of the session. */
+const asked = new Set();
+
+async function fetchMedia(ids) {
+  const want = ids.filter(id => id && !asked.has(id)).slice(0, 20);
+  if (!want.length) return false;
+  want.forEach(id => asked.add(id));
+  try {
+    const { media } = await call({ action: 'media', ids: want });
+    let got = false;
+    Object.keys(media || {}).forEach(id => {
+      const row = rows.find(r => r.id === id);
+      if (row) { Object.assign(row, media[id]); got = true; }
+    });
+    return got;
+  } catch {
+    want.forEach(id => asked.delete(id));      // let a later pass try again
+    return false;
+  }
+}
+
+/** Pull the pictures for the rows currently rendered, then repaint once. */
+function hydrateVisible(list) {
+  const ids = list.filter(r => (r.hasSignature || r.hasPhoto) && !r.signature && !r.photo)
+                  .slice(0, 12).map(r => r.id);
+  if (ids.length) fetchMedia(ids).then(got => { if (got) render(); });
 }
 
 /* ── dashboard ─────────────────────────────────────────────────────────
@@ -178,6 +210,7 @@ function visible() {
 
 function render() {
   const list = visible();
+  hydrateVisible(list);
   $('#empty').classList.toggle('hidden', list.length > 0);
   $('#list').innerHTML = list.map((r, i) => `
     <article class="entry !cursor-default" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 25, 250)}ms">
@@ -235,7 +268,8 @@ $('#list').addEventListener('click', async e => {
 
 const opts = (arr, val) => arr.map(o => `<option${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('');
 
-function openEdit(r) {
+async function openEdit(r) {
+  if ((r.hasSignature || r.hasPhoto) && !r.signature && !r.photo) await fetchMedia([r.id]);
   $('#modal-card').innerHTML = `
     <div class="mb-4 flex items-start justify-between gap-3">
       <div>
@@ -324,7 +358,7 @@ async function pollRev() {
   } finally { polling = false; }
 }
 
-setInterval(pollRev, 30000);
+setInterval(pollRev, 15000);
 setInterval(() => { if (!document.hidden) load(); }, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollRev(); });
 
