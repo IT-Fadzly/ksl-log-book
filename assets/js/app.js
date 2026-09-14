@@ -521,8 +521,7 @@ async function openDetail(id) {
     <div class="mt-5 flex flex-wrap gap-2">
       <button data-act="share" class="chip chip-ghost">Share</button>
       <button data-act="print" class="chip chip-ghost">Print</button>
-    </div>
-    <p class="mt-3 text-[11px] text-muted">Entries cannot be changed here — a log book is a record. Ask an admin to edit or remove one.</p>`;
+    </div>`;
   modal.classList.add('is-open');
   modal.dataset.id = id;
 }
