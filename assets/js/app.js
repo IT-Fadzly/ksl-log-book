@@ -28,7 +28,6 @@ const I18N = {
     'form.ticket': 'Tiket', 'form.auto': 'auto',
     'f.when': 'Bila ia berlaku?', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa direkod',
     'f.timeout': 'Masa keluar', 'f.timeback': 'Masa kembali',
-    'f.timehint': 'Biarkan masa kembali kosong jika masih di luar — admin boleh isi kemudian.',
     'f.who': 'Siapa yang bertanya?', 'f.name': 'Nama pengguna', 'f.dept': 'Jabatan',
     'f.what': 'Apa masalahnya?', 'f.cat': 'Kategori', 'f.pri': 'Keutamaan', 'f.req': 'Permohonan pengguna',
     'f.reqhint': 'Terangkan isu atau aktiviti', 'f.photo': 'Bukti gambar (pilihan)',
