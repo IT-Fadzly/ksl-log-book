@@ -17,10 +17,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
    crisp at any size, and every platform renders them identically. */
 const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-[14px] w-[14px] align-[-2px]"><path d="M4 13.5 9.8 19.5 20 5"/></svg>';
 const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="inline-block h-[13px] w-[13px] align-[-2px]"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.3 2"/></svg>';
+const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" class="inline-block h-[12px] w-[12px] align-[-1px]"><path d="M8 5.2v13.6L19 12z"/></svg>';
 const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
-let rows = [], tab = 'open';
+let rows = [], tab = 'wait';
 
 const pad = n => String(n).padStart(2, '0');
 const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -33,7 +34,9 @@ function humanDur(ms) {
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
 }
-const isDone = r => !!(r.finishedAt || r.duration || r.status === 'Resolved');
+const isDone    = r => !!(r.finishedAt || r.duration || r.status === 'Resolved');
+const isRunning = r => !isDone(r) && !!r.startedAt;
+const isWaiting = r => !isDone(r) && !r.startedAt;
 
 /* ── chrome ────────────────────────────────────────────────────────── */
 function toast(msg, kind = 'ok', ms = 3400) {
@@ -113,13 +116,15 @@ $('#btn-reload').addEventListener('click', () => load(true));
 
 /* ── stats ─────────────────────────────────────────────────────────── */
 function renderStats() {
-  const open = rows.filter(r => !isDone(r));
+  const waiting = rows.filter(isWaiting), running = rows.filter(isRunning);
   const today = isoOf(new Date());
   const doneToday = rows.filter(r => isDone(r) && r.finishedAt && r.finishedAt.slice(0, 10) === today);
 
-  $('#s-open').textContent = open.length;
-  $('#open-count').textContent = open.length;
+  $('#s-wait').textContent = waiting.length;
+  $('#s-open').textContent = running.length;
+  $('#open-count').textContent = waiting.length + running.length;
   $('#s-done').textContent = doneToday.length;
+  $('#s-wait').style.color = 'var(--c-yellow)';
   $('#s-open').style.color = 'var(--c-orange)';
   $('#s-done').style.color = 'var(--c-aqua)';
 
@@ -175,7 +180,7 @@ function visible() {
   const q = $('#search').value.trim().toLowerCase();
   const dp = $('#f-dept').value;
   return rows
-    .filter(r => tab === 'all' || (tab === 'open' ? !isDone(r) : isDone(r)))
+    .filter(r => tab === 'all' || (tab === 'wait' ? isWaiting(r) : tab === 'run' ? isRunning(r) : isDone(r)))
     .filter(r => !dp || r.department === dp)
     .filter(r => !q || [r.ticket, r.name, r.department, r.request, r.category].join(' ').toLowerCase().includes(q))
     .sort((a, b) => (PRI_RANK[a.priority] ?? 9) - (PRI_RANK[b.priority] ?? 9));
@@ -206,8 +211,11 @@ function render() {
       <div class="mt-3 flex flex-wrap items-center gap-3">
         ${done
           ? `<span class="pill st-resolved">${TICK} Done in ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
-          : `<span class="tick font-mono text-[13px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt || '')}">⏱ ${r.startedAt ? esc(humanDur(Date.now() - Date.parse(r.startedAt))) : 'no start time'}</span>
-             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`}
+          : isRunning(r)
+          ? `<span class="tick inline-flex items-center gap-1 font-mono text-[13px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt)}">${CLOCK} ${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</span>
+             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`
+          : `<span class="pill st-open"><span class="pill-dot"></span>Waiting to start</span>
+             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="start" data-id="${esc(r.id)}">Start ${PLAY}</button>`}
       </div>
     </article>`;
   }).join('');
@@ -224,8 +232,28 @@ setInterval(() => {
 
 /* ── finish a job ──────────────────────────────────────────────────── */
 $('#list').addEventListener('click', async e => {
-  const b = e.target.closest('[data-act="finish"]'); if (!b) return;
+  const b = e.target.closest('[data-act]'); if (!b) return;
   const r = rows.find(x => x.id === b.dataset.id); if (!r) return;
+
+  /* Start: IT has picked the job up, so the clock begins here — not when
+     the request was filed. */
+  if (b.dataset.act === 'start') {
+    b.disabled = true; b.textContent = 'Starting…';
+    try {
+      const res = await call({ action: 'start', id: r.id });
+      Object.assign(r, { status: 'In Progress', timeOut: res.timeOut, startedAt: res.startedAt });
+      buzz(); toast(`${r.ticket} started at ${res.timeOut}`);
+      tab = 'run';
+      $$('#tab-group button').forEach(x => x.classList.toggle('is-on', x.dataset.tab === 'run'));
+      render(); renderStats();
+    } catch (err) {
+      b.disabled = false; b.innerHTML = 'Start ' + PLAY;
+      toast('Could not start: ' + err.message, 'err', 5000);
+    }
+    return;
+  }
+
+  if (b.dataset.act !== 'finish') return;
   if (!confirm(`Finish ${r.ticket} — ${r.name}?\n\nThe time is stamped now and the job is marked Resolved.`)) return;
 
   b.disabled = true; b.textContent = 'Finishing…';

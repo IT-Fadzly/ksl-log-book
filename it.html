@@ -46,7 +46,7 @@ tailwind.config = {
     <div class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neon text-xl">🛠</div>
     <div class="min-w-0 flex-1">
       <h1 class="truncate font-display text-[15px] font-semibold leading-tight">IT <span class="gradient-text">Desk</span></h1>
-      <p class="truncate text-[11px] text-muted"><span id="open-count">0</span> in progress · <span id="clock" class="font-mono">--:--:--</span></p>
+      <p class="truncate text-[11px] text-muted"><span id="open-count">0</span> open · <span id="clock" class="font-mono">--:--:--</span></p>
     </div>
     <a href="index.html" class="chip chip-ghost">← App</a>
     <button id="btn-reload" class="icon-btn" title="Reload from the sheet" aria-label="Reload">
@@ -57,8 +57,9 @@ tailwind.config = {
 
 <main class="mx-auto max-w-4xl px-4 pb-24 pt-5 space-y-4">
 
-  <div class="grid grid-cols-3 gap-3">
-    <div class="stat glass"><p class="stat-label">In progress</p><p id="s-open" class="stat-num">0</p><p class="stat-foot">waiting on IT</p></div>
+  <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="stat glass"><p class="stat-label">Waiting</p><p id="s-wait" class="stat-num">0</p><p class="stat-foot">not picked up</p></div>
+    <div class="stat glass"><p class="stat-label">In progress</p><p id="s-open" class="stat-num">0</p><p class="stat-foot">clock running</p></div>
     <div class="stat glass"><p class="stat-label">Finished today</p><p id="s-done" class="stat-num">0</p><p class="stat-foot">closed jobs</p></div>
     <div class="stat glass"><p class="stat-label">Average time</p><p id="s-avg" class="stat-num">—</p><p class="stat-foot">today's jobs</p></div>
   </div>
@@ -69,8 +70,9 @@ tailwind.config = {
       <input id="search" type="search" placeholder="Search ticket, name, department…" class="input pl-9" />
     </div>
     <div class="mt-3 flex flex-wrap items-center gap-2">
-      <div class="segmented !grid-cols-3 !w-auto" id="tab-group" style="grid-template-columns:repeat(3,minmax(6rem,1fr))">
-        <button type="button" data-tab="open" class="is-on">In progress</button>
+      <div class="segmented !w-auto" id="tab-group" style="grid-template-columns:repeat(4,minmax(5.2rem,1fr))">
+        <button type="button" data-tab="wait" class="is-on">Waiting</button>
+        <button type="button" data-tab="run">Running</button>
         <button type="button" data-tab="done">Finished</button>
         <button type="button" data-tab="all">All</button>
       </div>

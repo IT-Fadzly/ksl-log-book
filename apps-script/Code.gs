@@ -23,6 +23,7 @@
  * when it moves. onEdit keeps that marker honest when a person types into the
  * sheet directly. onChange is optional — add it under Triggers to catch rows
  * inserted or deleted by hand.
+ *   {action:'start', id:'...'}         → IT picks the job up; starts the clock
  *   {action:'finish', id:'...'}        → stamp the finish time and duration
  *   {action:'delete', id:'...'}        → remove a row and its pictures
  *
@@ -82,6 +83,7 @@ function doPost(e) {
       case 'ping':   return reply(ping_());
       case 'append': return reply(append_(body.entry));
       case 'update': return reply(update_(body.entry));
+      case 'start':  return reply(start_(body.id));
       case 'finish': return reply(finish_(body.id));
       case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_(body.lite));
@@ -147,15 +149,13 @@ function append_(entry) {
   var s = sheet_();
   if (findRow_(s, entry.id)) return update_(entry);      // already there → treat as an update
 
-  var now = new Date();
-  entry.startedAt = now;                                 // server clock, not the phone's
-  entry.timeOut = fmtTime_(now);
-
+  // Filing a request does not start the clock: the job is waiting until
+  // someone at the IT Desk picks it up.
   s.appendRow(toRow_(entry));
   var row = s.getLastRow();
   attach_(s, row, entry);
   bump_();
-  return { ok: true, row: row, id: entry.id, timeOut: entry.timeOut, startedAt: now.toISOString() };
+  return { ok: true, row: row, id: entry.id };
 }
 
 function update_(entry) {
@@ -171,6 +171,26 @@ function update_(entry) {
   return { ok: true, row: row, id: entry.id };
 }
 
+/** Start the clock: IT has picked the job up. */
+function start_(id) {
+  if (!id) return { ok: false, error: 'id is required' };
+  var s = sheet_();
+  var row = findRow_(s, id);
+  if (!row) return { ok: false, error: 'Not found: ' + id };
+
+  var vals = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  if (vals[COL_STARTED - 1]) return { ok: false, error: 'This job is already started' };
+  if (vals[COL_FINISHED - 1]) return { ok: false, error: 'This job is already finished' };
+
+  var now = new Date();
+  s.getRange(row, COL_TIME_OUT).setValue(fmtTime_(now));
+  s.getRange(row, COL_STARTED).setValue(now);
+  s.getRange(row, COL_STATUS).setValue('In Progress');
+
+  bump_();
+  return { ok: true, id: id, row: row, timeOut: fmtTime_(now), startedAt: now.toISOString(), status: 'In Progress' };
+}
+
 /** Stop the clock on a task: finish time, duration, and status Resolved. */
 function finish_(id) {
   if (!id) return { ok: false, error: 'id is required' };
@@ -180,10 +200,11 @@ function finish_(id) {
 
   var vals = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
   if (vals[COL_FINISHED - 1]) return { ok: false, error: 'This task is already finished' };
+  if (!vals[COL_STARTED - 1]) return { ok: false, error: 'Press Start before finishing this job' };
 
-  var started = vals[COL_STARTED - 1] ? new Date(vals[COL_STARTED - 1]) : null;
+  var started = new Date(vals[COL_STARTED - 1]);
   var now = new Date();
-  var dur = started ? humanDur_(now.getTime() - started.getTime()) : '';
+  var dur = humanDur_(now.getTime() - started.getTime());
 
   s.getRange(row, COL_TIME_BACK).setValue(fmtTime_(now));
   s.getRange(row, COL_DURATION).setValue(dur);

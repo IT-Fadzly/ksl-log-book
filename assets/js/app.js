@@ -138,7 +138,7 @@ function timing(r) {
     const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
     return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}</span>`;
   }
-  return '';
+  return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-yellow)">${CLOCK} waiting for IT to start</span>`;
 }
 
 /** Ticket numbers come from the sheet, so two phones never mint the same one. */
