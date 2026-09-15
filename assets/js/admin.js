@@ -103,33 +103,45 @@ async function load() {
 
 
 /* ── images on demand ──────────────────────────────────────────────────
-   The listing arrives without pictures so a refresh stays small. Whatever is
-   actually on screen asks for its images once, and they are kept for the rest
-   of the session. */
-const asked = new Set();
+   The listing arrives without pictures so a refresh stays small, and the
+   pictures are fetched separately. They are kept in a cache keyed by entry id
+   rather than written onto the row objects: every refresh replaces those
+   objects, so anything held on them alone would disappear on the next poll. */
+const mediaCache = new Map();
+const inFlight = new Set();
+
+/** Put any pictures we already hold back onto the freshly loaded rows. */
+function applyMedia(list) {
+  let any = false;
+  list.forEach(r => {
+    const m = mediaCache.get(r.id);
+    if (m && (m.signature || m.photo) && !r.signature && !r.photo) { Object.assign(r, m); any = true; }
+  });
+  return any;
+}
 
 async function fetchMedia(ids) {
-  const want = ids.filter(id => id && !asked.has(id)).slice(0, 20);
+  const want = ids.filter(id => id && !mediaCache.has(id) && !inFlight.has(id)).slice(0, 20);
   if (!want.length) return false;
-  want.forEach(id => asked.add(id));
+  want.forEach(id => inFlight.add(id));
   try {
     const { media } = await call({ action: 'media', ids: want });
-    let got = false;
-    Object.keys(media || {}).forEach(id => {
-      const row = rows.find(r => r.id === id);
-      if (row) { Object.assign(row, media[id]); got = true; }
-    });
-    return got;
+    // Cache the misses too, so a row without pictures is never asked for twice.
+    want.forEach(id => mediaCache.set(id, (media && media[id]) || { signature: '', photo: '' }));
+    return applyMedia(rows);
   } catch {
-    want.forEach(id => asked.delete(id));      // let a later pass try again
     return false;
+  } finally {
+    want.forEach(id => inFlight.delete(id));
   }
 }
 
-/** Pull the pictures for the rows currently rendered, then repaint once. */
+/** Fill in the pictures for the rows on screen, then repaint once. */
 function hydrateVisible(list) {
-  const ids = list.filter(r => (r.hasSignature || r.hasPhoto) && !r.signature && !r.photo)
-                  .slice(0, 12).map(r => r.id);
+  applyMedia(list);
+  const ids = list
+    .filter(r => (r.hasSignature || r.hasPhoto) && !r.signature && !r.photo)
+    .map(r => r.id);
   if (ids.length) fetchMedia(ids).then(got => { if (got) render(); });
 }
 
@@ -274,7 +286,10 @@ const opts = (arr, val) => {
 };
 
 async function openEdit(r) {
-  if ((r.hasSignature || r.hasPhoto) && !r.signature && !r.photo) await fetchMedia([r.id]);
+  if ((r.hasSignature || r.hasPhoto) && !r.signature && !r.photo) {
+    await fetchMedia([r.id]);
+    applyMedia([r]);
+  }
   $('#modal-card').innerHTML = `
     <div class="mb-4 flex items-start justify-between gap-3">
       <div>
