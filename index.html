@@ -149,10 +149,15 @@ tailwind.config = {
               <option>HR</option>
               <option>Maintenance</option>
               <option>Receiving</option>
+              <option value="__other" data-i18n="f.other">Other…</option>
             </select>
             <span class="fl-label fl-static" data-i18n="f.dept">Department</span>
           </label>
         </div>
+        <label id="dept-other-wrap" class="fl mt-4 hidden">
+          <input type="text" name="departmentOther" placeholder=" " maxlength="40" class="input peer" />
+          <span class="fl-label" data-i18n="f.othername">Type the department name</span>
+        </label>
       </div>
 
       <div class="glass p-5">

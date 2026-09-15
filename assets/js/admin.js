@@ -266,7 +266,12 @@ $('#list').addEventListener('click', async e => {
   }
 });
 
-const opts = (arr, val) => arr.map(o => `<option${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('');
+/* A row may carry a department typed in by hand, so the current value is
+   always offered even when it is not one of the standard ones. */
+const opts = (arr, val) => {
+  const list = val && arr.indexOf(val) === -1 ? [val].concat(arr) : arr;
+  return list.map(o => `<option${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('');
+};
 
 async function openEdit(r) {
   if ((r.hasSignature || r.hasPhoto) && !r.signature && !r.photo) await fetchMedia([r.id]);

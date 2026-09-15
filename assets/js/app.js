@@ -28,6 +28,7 @@ const I18N = {
     'form.ticket': 'Tiket', 'form.auto': 'auto',
     'f.when': 'Bila ia berlaku?', 'f.now': 'Sekarang', 'f.date': 'Tarikh', 'f.time': 'Masa',
     'f.who': 'Siapa yang bertanya?', 'f.name': 'Nama pengguna', 'f.dept': 'Jabatan',
+    'f.other': 'Lain-lain…', 'f.othername': 'Taip nama jabatan',
     'f.what': 'Apa masalahnya?', 'f.cat': 'Kategori', 'f.pri': 'Keutamaan', 'f.req': 'Permohonan pengguna',
     'f.reqhint': 'Terangkan isu atau aktiviti', 'f.photo': 'Bukti gambar (pilihan)',
     'f.capture': 'Ambil gambar', 'f.remove': 'Buang',
@@ -232,12 +233,24 @@ $('#pri-group').addEventListener('click', e => {
   $$('#pri-group button').forEach(c => c.classList.toggle('is-on', c === b));
   priority = b.dataset.pri; buzz();
 });
+/** "Other…" is not a department — it is a request to name one. */
+const OTHER = '__other';
+const chosenDept = () =>
+  form.department.value === OTHER ? form.departmentOther.value.trim() : form.department.value;
+
+form.department.addEventListener('change', () => {
+  const other = form.department.value === OTHER;
+  $('#dept-other-wrap').classList.toggle('hidden', !other);
+  if (other) form.departmentOther.focus(); else form.departmentOther.value = '';
+  updateProgress();
+});
+
 form.request.addEventListener('input', () => { $('#char-count').textContent = form.request.value.length; updateProgress(); });
 form.addEventListener('input', updateProgress);
 
 function updateProgress() {
   const checks = [!!form.date.value, !!form.time.value, !!form.name.value.trim(),
-                  !!form.department.value, !!category, form.request.value.trim().length > 3, hasInk()];
+                  !!chosenDept(), !!category, form.request.value.trim().length > 3, hasInk()];
   const pct = Math.round(checks.filter(Boolean).length / checks.length * 100);
   const ring = $('#ring');
   if (ring) { ring.style.setProperty('--p', pct); $('#ring-val').textContent = pct + '%'; }
@@ -351,6 +364,11 @@ form.addEventListener('submit', async e => {
   let bad = null;
   fields.forEach(f => { const empty = !f.value.trim(); markBad(f, empty); if (empty && !bad) bad = f; });
   if (bad) { bad.focus(); bad.scrollIntoView({ block: 'center', behavior: 'smooth' }); return toast('Please complete the required fields.', 'err'); }
+  if (form.department.value === OTHER && !form.departmentOther.value.trim()) {
+    markBad(form.departmentOther, true);
+    form.departmentOther.focus();
+    return toast('Type the department name.', 'err');
+  }
   if (!category) return toast('Pick a category.', 'err');
   if (!hasInk()) { $('.sig-wrap').scrollIntoView({ block: 'center', behavior: 'smooth' }); return toast('Signature is required.', 'err'); }
 
@@ -360,7 +378,7 @@ form.addEventListener('submit', async e => {
     id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     ticket: $('#ticket-id').textContent,
     date: form.date.value, time: form.time.value,
-    name: form.name.value.trim(), department: form.department.value,
+    name: form.name.value.trim(), department: chosenDept(),
     category, priority, request: form.request.value.trim(),
     status: 'Open', signature: signaturePNG(), photo: photoData,
     device: navigator.platform || 'web', created: new Date().toISOString()
@@ -388,6 +406,7 @@ $('#btn-reset').addEventListener('click', () => { resetForm(); toast('Form clear
 
 function resetForm() {
   form.reset();
+  $('#dept-other-wrap').classList.add('hidden');
   strokes = []; redrawPad();
   photoData = ''; $('#photo-wrap').classList.replace('flex', 'hidden');
   category = ''; $$('#cat-group .chip').forEach(c => c.classList.remove('is-on'));
