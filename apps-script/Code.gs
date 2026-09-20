@@ -34,7 +34,7 @@
 var TAB_NAME = 'Log Book';
 var SECRET    = '';                        // set a string here + in the app to lock it down
 var ADMIN_KEY = '';                        // set a passphrase to gate edit + delete
-var MAX_LIST = 300;
+var MAX_LIST = 10000;
 var IMAGES   = true;                       // false = store "(signed)" text instead of the image
 
 var HEADERS = [
@@ -259,26 +259,35 @@ function list_(lite) {
   if (last < 2) return { ok: true, rows: [] };
 
   var start = Math.max(2, last - MAX_LIST + 1);
-  var values = s.getRange(start, 1, last - start + 1, HEADERS.length).getValues();
+  var n = last - start + 1;
+
+  /* Two narrow reads rather than one wide one. Columns 16 and 17 hold the
+     pictures as data URLs — up to CELL_LIMIT characters each — and a listing
+     never sends them, so reading them cost every refresh its speed and bought
+     nothing. Columns 11 and 12 carry the cheap 'signed' / 'photo' markers,
+     which is all the app needs in order to know a picture exists. */
+  var head = s.getRange(start, 1, n, 14).getValues();             // Entry ID → Created
+  var tail = s.getRange(start, COL_TIME_OUT, n, 5).getValues();   // Time Out → Finished At
+  var pics = lite ? null : s.getRange(start, COL_SIG_DATA, n, 2).getValues();
 
   // One malformed cell must not cost the whole listing, so each row is
   // mapped defensively and a row that still fails is skipped.
   var rows = [];
-  for (var i = 0; i < values.length; i++) {
+  for (var i = 0; i < n; i++) {
     try {
-      var r = values[i];
+      var r = head[i], t = tail[i];
       if (!r[0]) continue;
       rows.push({
         id: String(r[0]), ticket: String(r[1]),
         date: fmtDate_(r[2]), time: fmtTime_(r[3]),
         name: String(r[4]), department: String(r[5]), category: String(r[6]),
         priority: String(r[7]), request: String(r[8]), status: String(r[9]) || 'Open',
-        signature: lite ? '' : String(r[15] || ''),    // readable copies - the pictures
-        photo:     lite ? '' : String(r[16] || ''),    // in the cells cannot be read back
-        hasSignature: !!r[15], hasPhoto: !!r[16],
-        timeOut: fmtTime_(r[17]), timeReturned: fmtTime_(r[18]),
-        duration: String(r[19] || ''),
-        startedAt: iso_(r[20]), finishedAt: iso_(r[21]),
+        signature: pics ? String(pics[i][0] || '') : '',   // readable copies - the pictures
+        photo:     pics ? String(pics[i][1] || '') : '',   // in the cells cannot be read back
+        hasSignature: !!r[10], hasPhoto: !!r[11],
+        timeOut: fmtTime_(t[0]), timeReturned: fmtTime_(t[1]),
+        duration: String(t[2] || ''),
+        startedAt: iso_(t[3]), finishedAt: iso_(t[4]),
         device: String(r[12]), created: iso_(r[13])
       });
     } catch (ignore) {}
@@ -297,12 +306,31 @@ function media_(ids) {
   var wanted = {};
   for (var i = 0; i < Math.min(ids.length, 20); i++) wanted[String(ids[i])] = true;
 
-  var values = s.getRange(2, 1, last - 1, HEADERS.length).getValues();
+  /* Find the rows by reading the id column alone. Reading the whole sheet to
+     answer for twenty entries is what made this call slower with every row
+     added — and it dragged every stored picture along to do it. */
+  var idCol = s.getRange(2, 1, last - 1, 1).getValues();
+  var hits = [];
+  for (var j = 0; j < idCol.length; j++) {
+    var id = String(idCol[j][0]);
+    if (id && wanted[id]) hits.push({ row: j + 2, id: id });
+  }
+
+  /* Now the pictures, in runs of neighbouring rows. A page of entries is
+     usually one such run, so this is usually a single read; rows scattered by
+     a filter cost one read each, and never more than one per entry. Only rows
+     that were actually asked for are read — these cells are large enough that
+     reaching over a gap to save a call would cost more than the call. */
   var out = {};
-  for (var j = 0; j < values.length; j++) {
-    var id = String(values[j][0]);
-    if (!wanted[id]) continue;
-    out[id] = { signature: String(values[j][15] || ''), photo: String(values[j][16] || '') };
+  for (var k = 0; k < hits.length; k++) {
+    var first = k;
+    while (k + 1 < hits.length && hits[k + 1].row - hits[k].row <= 1) k++;
+    var from = hits[first].row, span = hits[k].row - from + 1;
+    var block = s.getRange(from, COL_SIG_DATA, span, 2).getValues();
+    for (var m = first; m <= k; m++) {
+      var cells = block[hits[m].row - from];
+      out[hits[m].id] = { signature: String(cells[0] || ''), photo: String(cells[1] || '') };
+    }
   }
   return { ok: true, media: out };
 }
