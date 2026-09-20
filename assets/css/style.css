@@ -394,6 +394,38 @@ input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
   font-size: 12px; font-weight: 700;
 }
 
+/* ── pagination ────────────────────────────────────────────────────────
+   Long lists are cut into pages: a phone is never asked to draw hundreds
+   of cards at once, and only the page on screen asks the sheet for its
+   pictures. The bar hides itself when everything already fits. */
+.pager {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem;
+  border-radius: 1.75rem; border: 1px solid rgb(var(--line));
+  background: rgb(var(--panel)); box-shadow: var(--shadow-sm);
+  padding: .65rem .9rem .65rem 1.1rem;
+}
+.pager[hidden] { display: none; }
+.pager-label {
+  display: inline-flex; align-items: center; gap: .55rem;
+  font-size: 12.5px; font-weight: 600; color: rgb(var(--subink));
+}
+.pager-select { padding: .3rem 1.9rem .3rem .75rem; font-size: 12.5px; }
+.pager-nav { margin-left: auto; display: flex; align-items: center; gap: .25rem; }
+.pager-range {
+  margin-right: .5rem; font-size: 12.5px; font-weight: 600;
+  color: rgb(var(--subink)); font-variant-numeric: tabular-nums;
+}
+.pager-btn {
+  display: grid; place-items: center;
+  height: 2.1rem; width: 2.1rem; border-radius: 999px;
+  border: 1px solid transparent; color: rgb(var(--subink));
+  transition: .2s var(--spring);
+}
+.pager-btn svg { height: 17px; width: 17px; }
+.pager-btn:hover:not([disabled]) { color: var(--accent); border-color: var(--accent); }
+.pager-btn:active:not([disabled]) { transform: scale(.9); }
+.pager-btn[disabled] { opacity: .3; pointer-events: none; }
+
 /* ── toast ─────────────────────────────────────────────────────────── */
 .toast {
   pointer-events: auto;
@@ -436,7 +468,7 @@ input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
 }
 
 @media print {
-  .bg-stage, header, nav, #toast-wrap, #confetti, .btn-primary, .btn-ghost { display: none !important; }
+  .bg-stage, header, nav, #toast-wrap, #confetti, .pager, .btn-primary, .btn-ghost { display: none !important; }
   body { background: #fff; color: #000; }
   .glass, .entry { border: 1px solid #ddd; background: #fff; box-shadow: none; }
 }

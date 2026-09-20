@@ -209,6 +209,39 @@ function renderStats() {
   }).join('') : '<tr><td colspan="4" class="py-3 text-muted">No data yet.</td></tr>';
 }
 
+/* ── pages ─────────────────────────────────────────────────────────────
+   The sheet only grows, so the list is drawn one page at a time — the
+   browser is never asked to lay out hundreds of cards, and only the cards
+   on screen ask the sheet for their pictures. The page is a slice of
+   whatever the filters already narrowed down, so changing a filter returns
+   to page one: page seven of the old result means nothing against the new. */
+let perPage = 10, page = 1;
+
+/** Cut the filtered list down to the page on screen, and redraw the bar. */
+function paginate(list) {
+  const total = list.length;
+  const size = perPage || total || 1;          // "All" puts everything on one page
+  const pages = Math.max(1, Math.ceil(total / size));
+  page = Math.min(Math.max(1, page), pages);   // a refresh or a delete can shrink the list
+  const start = (page - 1) * size, end = Math.min(start + size, total);
+
+  $('#pager').hidden = total === 0;
+  $('#pager-range').textContent = total ? `${start + 1}–${end} of ${total}` : '';
+  $$('#pager [data-pg]').forEach(b => {
+    b.disabled = /first|prev/.test(b.dataset.pg) ? page === 1 : page === pages;
+  });
+  return list.slice(start, end);
+}
+
+$('#per-page').addEventListener('change', e => { perPage = +e.target.value; page = 1; render(); });
+$('#pager').addEventListener('click', e => {
+  const b = e.target.closest('[data-pg]'); if (!b) return;
+  const to = b.dataset.pg;
+  page = to === 'first' ? 1 : to === 'prev' ? page - 1 : to === 'next' ? page + 1 : 1e9;
+  render();                                    // paginate() clamps it back into range
+  scrollTo({ top: Math.max(0, $('#work').offsetTop - 80), behavior: 'smooth' });
+});
+
 function visible() {
   const q = $('#search').value.trim().toLowerCase();
   const st = $('#f-status').value, dp = $('#f-dept').value;
@@ -222,9 +255,10 @@ function visible() {
 
 function render() {
   const list = visible();
-  hydrateVisible(list);
+  const shown = paginate(list);
+  hydrateVisible(shown);
   $('#empty').classList.toggle('hidden', list.length > 0);
-  $('#list').innerHTML = list.map((r, i) => `
+  $('#list').innerHTML = shown.map((r, i) => `
     <article class="entry !cursor-default" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 25, 250)}ms">
       <div class="flex flex-wrap items-start gap-3">
         <div class="min-w-0 flex-1">
@@ -248,13 +282,13 @@ function render() {
 }
 
 [$('#search'), $('#f-status'), $('#f-dept'), $('#f-from'), $('#f-to')]
-  .forEach(el => el.addEventListener('input', render));
+  .forEach(el => el.addEventListener('input', () => { page = 1; render(); }));
 $('#btn-today').addEventListener('click', () => {
   const t = isoOf(new Date());
-  $('#f-from').value = t; $('#f-to').value = t; render();
+  $('#f-from').value = t; $('#f-to').value = t; page = 1; render();
 });
 $('#btn-dates-clear').addEventListener('click', () => {
-  $('#f-from').value = ''; $('#f-to').value = ''; render();
+  $('#f-from').value = ''; $('#f-to').value = ''; page = 1; render();
 });
 $('#btn-reload').addEventListener('click', load);
 

@@ -180,13 +180,47 @@ function hydrateVisible(list) {
   if (ids.length) fetchMedia(ids).then(got => { if (got) render(); });
 }
 
+/* ── pages ─────────────────────────────────────────────────────────────
+   The queue only grows, so it is drawn one page at a time — a phone is
+   never asked to lay out hundreds of cards, and only the cards on screen
+   ask the sheet for their pictures. The page is a slice of whatever the
+   filters already narrowed down, so changing a filter returns to page one:
+   page seven of the old result means nothing against the new one. */
+let perPage = 10, page = 1;
+
+/** Cut the filtered list down to the page on screen, and redraw the bar. */
+function paginate(list) {
+  const total = list.length;
+  const size = perPage || total || 1;          // "All" puts everything on one page
+  const pages = Math.max(1, Math.ceil(total / size));
+  page = Math.min(Math.max(1, page), pages);   // a refresh can shrink the list under us
+  const start = (page - 1) * size, end = Math.min(start + size, total);
+
+  $('#pager').hidden = total === 0;
+  $('#pager-range').textContent = total ? `${start + 1}–${end} of ${total}` : '';
+  $$('#pager [data-pg]').forEach(b => {
+    b.disabled = /first|prev/.test(b.dataset.pg) ? page === 1 : page === pages;
+  });
+  return list.slice(start, end);
+}
+
+$('#per-page').addEventListener('change', e => { perPage = +e.target.value; page = 1; render(); });
+$('#pager').addEventListener('click', e => {
+  const b = e.target.closest('[data-pg]'); if (!b) return;
+  const to = b.dataset.pg;
+  page = to === 'first' ? 1 : to === 'prev' ? page - 1 : to === 'next' ? page + 1 : 1e9;
+  render();                                    // paginate() clamps it back into range
+  buzz();
+  scrollTo({ top: Math.max(0, $('#list').offsetTop - 80), behavior: 'smooth' });
+});
+
 /* ── list ──────────────────────────────────────────────────────────── */
 $('#tab-group').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]'); if (!b) return;
   $$('#tab-group button').forEach(x => x.classList.toggle('is-on', x === b));
-  tab = b.dataset.tab; render(); buzz();
+  tab = b.dataset.tab; page = 1; render(); buzz();
 });
-[$('#search'), $('#f-dept')].forEach(el => el.addEventListener('input', render));
+[$('#search'), $('#f-dept')].forEach(el => el.addEventListener('input', () => { page = 1; render(); }));
 
 function visible() {
   const q = $('#search').value.trim().toLowerCase();
@@ -200,9 +234,10 @@ function visible() {
 
 function render() {
   const list = visible();
-  hydrateVisible(list);
+  const shown = paginate(list);
+  hydrateVisible(shown);
   $('#empty').classList.toggle('hidden', list.length > 0);
-  $('#list').innerHTML = list.map((r, i) => {
+  $('#list').innerHTML = shown.map((r, i) => {
     const done = isDone(r);
     return `
     <article class="entry !cursor-default" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 25, 240)}ms">
@@ -255,7 +290,7 @@ $('#list').addEventListener('click', async e => {
       const res = await call({ action: 'start', id: r.id });
       Object.assign(r, { status: 'In Progress', timeOut: res.timeOut, startedAt: res.startedAt });
       buzz(); toast(`${r.ticket} started at ${res.timeOut}`);
-      tab = 'run';
+      tab = 'run'; page = 1;
       $$('#tab-group button').forEach(x => x.classList.toggle('is-on', x.dataset.tab === 'run'));
       render(); renderStats();
     } catch (err) {

@@ -40,7 +40,8 @@ const I18N = {
     'pri.low': 'Rendah', 'pri.med': 'Sederhana', 'pri.high': 'Tinggi', 'pri.crit': 'Kritikal',
     'log.search': 'Cari nama, tiket, permohonan...', 'log.export': 'Eksport CSV',
     'log.dates': 'Tarikh', 'log.today': 'Hari ini', 'log.anydate': 'Semua tarikh',
-    'log.empty': 'Tiada entri lagi ✨', 'log.emptysub': 'Entri akan muncul di sini sebaik dihantar.'
+    'log.empty': 'Tiada entri lagi ✨', 'log.emptysub': 'Entri akan muncul di sini sebaik dihantar.',
+    'log.perpage': 'Baris setiap halaman', 'log.of': 'daripada'
   }
 };
 function applyLang() {
@@ -96,7 +97,8 @@ function applyTheme() {
 $('#btn-theme').addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); buzz(); });
 $('#btn-lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ms' : 'en'; buzz();
-  if (lang === 'en') location.reload(); else applyLang();
+  // the page count is built in code, so it needs a repaint to follow the language
+  if (lang === 'en') location.reload(); else { applyLang(); renderLog(); }
 });
 
 /* ── routing ───────────────────────────────────────────────────────── */
@@ -466,14 +468,49 @@ function hydrateVisible(list) {
 /* ══ LOG BOOK ═════════════════════════════════════════════════════════ */
 const search = $('#search');
 [search, $('#f-status'), $('#f-dept'), $('#f-sort'), $('#f-from'), $('#f-to')]
-  .forEach(el => el.addEventListener('input', renderLog));
+  .forEach(el => el.addEventListener('input', () => { page = 1; renderLog(); }));
 
 $('#btn-today').addEventListener('click', () => {
   const t = isoOf(new Date());
-  $('#f-from').value = t; $('#f-to').value = t; renderLog(); buzz();
+  $('#f-from').value = t; $('#f-to').value = t; page = 1; renderLog(); buzz();
 });
 $('#btn-dates-clear').addEventListener('click', () => {
-  $('#f-from').value = ''; $('#f-to').value = ''; renderLog(); buzz();
+  $('#f-from').value = ''; $('#f-to').value = ''; page = 1; renderLog(); buzz();
+});
+
+/* ── pages ─────────────────────────────────────────────────────────────
+   The sheet only grows, so the log is drawn one page at a time — a phone is
+   never asked to lay out hundreds of cards, and only the cards on screen ask
+   the sheet for their pictures. The page is a slice of whatever the filters
+   already narrowed down, so changing a filter returns to page one: page
+   seven of the old result means nothing against the new one. */
+let perPage = 10, page = 1;
+
+/** Cut the filtered list down to the page on screen, and redraw the bar. */
+function paginate(list) {
+  const total = list.length;
+  const size = perPage || total || 1;          // "All" puts everything on one page
+  const pages = Math.max(1, Math.ceil(total / size));
+  page = Math.min(Math.max(1, page), pages);   // a refresh can shrink the list under us
+  const start = (page - 1) * size, end = Math.min(start + size, total);
+  const of = (I18N[lang] || {})['log.of'] || 'of';
+
+  $('#pager').hidden = total === 0;
+  $('#pager-range').textContent = total ? `${start + 1}–${end} ${of} ${total}` : '';
+  $$('#pager [data-pg]').forEach(b => {
+    b.disabled = /first|prev/.test(b.dataset.pg) ? page === 1 : page === pages;
+  });
+  return list.slice(start, end);
+}
+
+$('#per-page').addEventListener('change', e => { perPage = +e.target.value; page = 1; renderLog(); });
+$('#pager').addEventListener('click', e => {
+  const b = e.target.closest('[data-pg]'); if (!b) return;
+  const to = b.dataset.pg;
+  page = to === 'first' ? 1 : to === 'prev' ? page - 1 : to === 'next' ? page + 1 : 1e9;
+  renderLog();                                 // paginate() clamps it back into range
+  buzz();
+  scrollTo({ top: Math.max(0, $('#log-list').offsetTop - 80), behavior: 'smooth' });
 });
 
 function visibleRows() {
@@ -496,9 +533,10 @@ function renderLog() {
     depts.map(d => `<option${d === keep ? ' selected' : ''}>${esc(d)}</option>`).join('');
 
   const list = visibleRows();
-  hydrateVisible(list);
+  const shown = paginate(list);
+  hydrateVisible(shown);
   $('#log-empty').classList.toggle('hidden', list.length > 0);
-  $('#log-list').innerHTML = list.map((r, i) => `
+  $('#log-list').innerHTML = shown.map((r, i) => `
     <article class="entry" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 30, 260)}ms">
       <div class="flex items-start gap-3">
         <div class="min-w-0 flex-1">
