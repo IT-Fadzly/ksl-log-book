@@ -32,10 +32,27 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=11" />
+<link rel="stylesheet" href="assets/css/style.css?v=12" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
+
+<!-- The desk gate. Shown by default and taken down by the script, so a
+     broken script leaves the door shut rather than open. -->
+<div id="gate" class="fixed inset-0 z-[80] grid place-items-center bg-surface px-4">
+  <div id="gate-card" class="glass w-full max-w-xs p-6 text-center">
+    <div class="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-neon text-2xl">🛠</div>
+    <h1 class="font-display text-lg font-semibold">IT Desk</h1>
+    <p class="mt-1 text-[13px] text-subink">Enter the desk passcode to continue.</p>
+    <form id="gate-form" class="mt-4 space-y-3">
+      <input id="gate-code" type="password" inputmode="numeric" autocomplete="off" maxlength="12"
+             class="input text-center font-mono text-lg tracking-[.4em]" aria-label="Passcode" />
+      <p id="gate-msg" class="min-h-[1.1rem] text-[12px] font-medium" style="color:var(--c-red)"></p>
+      <button type="submit" class="btn-primary w-full !py-2.5">Unlock</button>
+    </form>
+    <a href="index.html" class="mt-4 inline-block text-[12px] text-muted underline">← Back to the log book</a>
+  </div>
+</div>
 <div class="bg-stage" aria-hidden="true">
   <div class="aurora aurora-1"></div>
   <div class="aurora aurora-3"></div>

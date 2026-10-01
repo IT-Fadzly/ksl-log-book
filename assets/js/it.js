@@ -23,6 +23,14 @@ const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
 let rows = [], tab = 'wait';
 
+/* The desk asks for a code before it shows the queue. This is a latch, not a
+   lock: the code travels inside the page, so anyone who reads the source can
+   read it. It keeps the desk out of the way of people with no business in it —
+   anything stronger has to be checked by the sheet, not by this script. */
+const PASSCODE = '794';
+const GATE_KEY = 'ksl-it-desk';          // remembered for this tab only
+let unlocked = false;
+
 const pad = n => String(n).padStart(2, '0');
 const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
@@ -91,7 +99,7 @@ async function call(payload) {
 
 let loading = false;
 async function load(loud) {
-  if (loading) return;
+  if (!unlocked || loading) return;    // nothing is fetched before the code is in
   loading = true;
   $('#state').textContent = 'Loading…';
   $('#btn-reload svg').classList.add('spin');
@@ -328,7 +336,7 @@ $('#list').addEventListener('click', async e => {
 let rev = null, polling = false;
 
 async function pollRev() {
-  if (polling || document.hidden) return;
+  if (!unlocked || polling || document.hidden) return;
   polling = true;
   try {
     const d = await call({ action: 'rev' });
@@ -343,8 +351,36 @@ setInterval(pollRev, 7000);
 setInterval(() => { if (!document.hidden) load(); }, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollRev(); });
 
+/* ── the gate ──────────────────────────────────────────────────────── */
+function unlock() {
+  unlocked = true;
+  try { sessionStorage.setItem(GATE_KEY, '1'); } catch (ignore) {}
+  const g = $('#gate'); if (g) g.remove();
+  load();
+}
+
+/* Asking again on every refresh would be unusable on a desk that reloads all
+   day, so the answer is kept for the tab and goes when the tab is closed. */
+function openGate() {
+  let remembered = false;
+  try { remembered = sessionStorage.getItem(GATE_KEY) === '1'; } catch (ignore) {}
+  if (remembered) return unlock();
+
+  const card = $('#gate-card'), input = $('#gate-code');
+  input.focus();
+  $('#gate-form').addEventListener('submit', e => {
+    e.preventDefault();
+    if (input.value.trim() === PASSCODE) return unlock();
+    input.value = '';
+    $('#gate-msg').textContent = 'That code is not right.';
+    card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+    buzz([30, 40, 30]);
+    input.focus();
+  });
+}
+
 /* ── boot ──────────────────────────────────────────────────────────── */
 if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
 setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString(); }, 1000);
-load();
+openGate();
 })();
