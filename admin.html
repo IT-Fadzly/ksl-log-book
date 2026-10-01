@@ -33,7 +33,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=13" />
+<link rel="stylesheet" href="assets/css/style.css?v=14" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -44,10 +44,12 @@ tailwind.config = {
 
 <header class="sticky top-0 z-40 border-b border-line/70 bg-surface/75 backdrop-blur-xl">
   <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
-    <div class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neon font-display text-xl font-bold text-white">K</div>
+    <div id="brand" class="flex min-w-0 flex-1 items-center gap-3">
+      <div id="brand-badge" class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-neon font-display text-xl font-bold text-white">K</div>
     <div class="min-w-0 flex-1">
-      <h1 class="truncate font-display text-[15px] font-semibold leading-tight">Log Book <span class="gradient-text">Admin</span></h1>
+      <h1 id="brand-name" class="truncate font-display text-[15px] font-semibold leading-tight">Log Book <span class="gradient-text">Admin</span></h1>
       <p class="truncate text-[11px] text-muted"><span id="count">0</span> entries · dashboard, edit and delete</p>
+    </div>
     </div>
     <a href="it.html" class="chip chip-ghost">🛠 IT Desk</a>
     <a href="index.html" class="chip chip-ghost">← App</a>
@@ -102,6 +104,47 @@ tailwind.config = {
     </div>
   </section>
 
+    <!-- how every page looks: logo, name, placement -->
+    <div class="glass p-5">
+      <h3 class="chart-title">Appearance</h3>
+      <p class="chart-sub">The logo and name shown on the log book, the IT Desk and this page</p>
+
+      <div class="mt-4 flex flex-wrap items-start gap-5">
+        <div class="text-center">
+          <div id="logo-preview" class="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl border border-line bg-surface text-[11px] text-muted">none</div>
+          <p class="mt-1 text-[10.5px] uppercase tracking-wider text-muted">Logo</p>
+        </div>
+
+        <div class="min-w-[240px] flex-1 space-y-3">
+          <div class="flex flex-wrap gap-2">
+            <label class="chip chip-ghost cursor-pointer">Choose a picture
+              <input id="logo-input" type="file" accept="image/*" class="hidden" />
+            </label>
+            <button id="logo-clear" class="chip chip-ghost">Remove</button>
+          </div>
+
+          <label class="fl block">
+            <input id="set-name" maxlength="40" placeholder=" " class="input peer" />
+            <span class="fl-label">Name in the header</span>
+          </label>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[12px] font-medium text-muted">Placement</span>
+            <div class="segmented !w-auto" id="pos-group" style="grid-template-columns:repeat(2,minmax(5.5rem,1fr))">
+              <button type="button" data-pos="left" class="is-on">Left</button>
+              <button type="button" data-pos="center">Centre</button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 pt-1">
+            <button id="brand-save" class="btn-primary !py-2.5 !px-5">Save appearance</button>
+            <span id="brand-state" class="text-[12px] text-muted"></span>
+          </div>
+          <p class="text-[11px] text-muted">Kept in the sheet, so it survives a redeploy. Other screens pick it up the next time they are opened.</p>
+        </div>
+      </div>
+    </div>
+
   <!-- workspace -->
   <section id="work" class="space-y-4">
     <div class="glass p-4">
@@ -124,7 +167,7 @@ tailwind.config = {
       </div>
     </div>
 
-    <div id="list" class="space-y-3"></div>
+    <div id="list" class="list-compact"></div>
   <div id="pager" class="pager" hidden>
     <label class="pager-label"><span>Rows per page</span>
       <select id="per-page" class="mini-select pager-select" aria-label="Rows per page">

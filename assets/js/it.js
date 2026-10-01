@@ -248,31 +248,23 @@ function render() {
   $('#list').innerHTML = shown.map((r, i) => {
     const done = isDone(r);
     return `
-    <article class="entry !cursor-default" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 25, 240)}ms">
-      <div class="flex flex-wrap items-start gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
-            <span class="text-[11px] font-semibold" style="color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
-            <span class="text-[11px] text-muted">${esc(r.category)}</span>
-          </div>
-          <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
-          <p class="mt-1 text-[13px] text-subink">${esc(r.request)}</p>
-          <p class="mt-2 font-mono text-[11px] text-muted">filed ${esc(r.date)} ${esc(r.time)}${r.timeOut ? ` · started ${esc(r.timeOut)}` : ''}${r.timeReturned ? ` · finished ${esc(r.timeReturned)}` : ''}</p>
-        </div>
-        ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-11 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
+    <article class="entry compact !cursor-default" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 14, 160)}ms">
+      <div class="ent-top">
+        <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
+        <span class="text-[11px] font-semibold" style="color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
+        <span class="truncate font-display text-[13.5px] font-semibold">${esc(r.name)}</span>
+        <span class="truncate text-[12px] text-muted">· ${esc(r.department)}</span>
+        <span class="ml-auto shrink-0 font-mono text-[11px] text-muted">${esc(r.time)}</span>
       </div>
-
-      <div class="mt-3 flex flex-wrap items-center gap-3">
+      <div class="ent-sub">
+        <span class="ent-req">${esc(r.request)}${r.resolution ? ` <span style="color:var(--c-aqua)">· ${esc(r.resolution)}</span>` : ''}</span>
         ${done
-          ? `<span class="pill st-resolved">${TICK} Done in ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
+          ? `<span class="pill st-resolved shrink-0">${TICK} ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
           : isRunning(r)
-          ? `<span class="tick inline-flex items-center gap-1 font-mono text-[13px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt)}">${CLOCK} ${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</span>
-             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`
-          : `<span class="pill st-open"><span class="pill-dot"></span>Waiting to start</span>
-             <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="start" data-id="${esc(r.id)}">Start ${PLAY}</button>`}
+          ? `<span class="tick shrink-0 inline-flex items-center gap-1 font-mono text-[12px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt)}">${CLOCK} ${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</span>
+             <button class="btn-primary shrink-0 !py-1 !px-3 !text-[12px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`
+          : `<button class="btn-primary shrink-0 !py-1 !px-3 !text-[12px]" data-act="start" data-id="${esc(r.id)}">Start ${PLAY}</button>`}
       </div>
-      ${r.resolution ? `<p class="mt-3 whitespace-pre-wrap rounded-xl border border-line bg-surface p-3 text-[12.5px] leading-relaxed text-subink"><span class="font-semibold text-ink">Resolution · </span>${esc(r.resolution)}</p>` : ''}
     </article>`;
   }).join('');
 }
@@ -408,7 +400,22 @@ function unlock() {
   unlocked = true;
   try { sessionStorage.setItem(GATE_KEY, '1'); } catch (ignore) {}
   const g = $('#gate'); if (g) g.remove();
+  loadBrand();
   load();
+}
+
+/* The logo and the name are set on the admin page and kept in the sheet.
+   Asked for only once the code is in, so a locked desk still touches nothing. */
+async function loadBrand() {
+  try {
+    const { settings } = await call({ action: 'settings' });
+    const s = settings || {};
+    const badge = $('#brand-badge'), name = $('#brand-name');
+    if (s.logo && badge) badge.innerHTML = `<img src="${s.logo}" alt="" />`;
+    if (s.appName && name) name.textContent = s.appName;
+    const row = $('#brand') && $('#brand').parentElement;
+    if (row) row.classList.toggle('brand-center', s.logoPos === 'center');
+  } catch (ignore) {}
 }
 
 /* Asking again on every refresh would be unusable on a desk that reloads all

@@ -537,20 +537,18 @@ function renderLog() {
   hydrateVisible(shown);
   $('#log-empty').classList.toggle('hidden', list.length > 0);
   $('#log-list').innerHTML = shown.map((r, i) => `
-    <article class="entry" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 30, 260)}ms">
-      <div class="flex items-start gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
-            <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
-            <span class="text-[11px] text-muted">${esc(r.priority)}</span>
-          </div>
-          <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
-          <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
-          <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)} · ${esc(r.category)}</p>
-          ${timing(r) ? `<p class="mt-1">${timing(r)}</p>` : ''}
-        </div>
-        ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
+    <article class="entry compact" data-id="${esc(r.id)}" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 14, 160)}ms">
+      <div class="ent-top">
+        <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
+        <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
+        <span class="truncate font-display text-[13.5px] font-semibold">${esc(r.name)}</span>
+        <span class="truncate text-[12px] text-muted">· ${esc(r.department)}</span>
+        <span class="ml-auto shrink-0 font-mono text-[11px] text-muted">${esc(r.date)} ${esc(r.time)}</span>
+      </div>
+      <div class="ent-sub">
+        <span class="ent-req">${esc(r.request)}</span>
+        <span class="shrink-0 text-[11px]" style="color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
+        ${r.duration ? `<span class="shrink-0 font-mono text-[11px]" style="color:var(--c-aqua)">${esc(r.duration)}</span>` : ''}
       </div>
     </article>`).join('');
 }
@@ -631,6 +629,22 @@ $('#btn-export').addEventListener('click', () => {
   toast('Exported CSV.');
 });
 
+/* ── the brand ─────────────────────────────────────────────────────────
+   The logo and the name are set on the admin page and kept in the sheet, so
+   this page just asks what to wear. A failure here is silent: the app has
+   its own badge, and a missing logo must never cost anyone the form. */
+async function loadBrand() {
+  try {
+    const { settings } = await callSheet({ action: 'settings' });
+    const s = settings || {};
+    const badge = $('#brand-badge'), name = $('#brand-name');
+    if (s.logo && badge) badge.innerHTML = `<img src="${s.logo}" alt="" />`;
+    if (s.appName && name) name.textContent = s.appName;
+    const row = $('#brand') && $('#brand').parentElement;
+    if (row) row.classList.toggle('brand-center', s.logoPos === 'center');
+  } catch (ignore) {}
+}
+
 /* ── no service worker, no cached copies ───────────────────────────── */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations()
@@ -648,5 +662,6 @@ stampNow();
 $('#net-state').textContent = navigator.onLine ? 'online' : 'offline';
 show('new');
 updateProgress();
+loadBrand();
 loadRows();
 })();

@@ -32,6 +32,7 @@
  */
 
 var TAB_NAME = 'Log Book';
+var SETTINGS_TAB = 'Settings';             // the look of the app: logo, name, placement
 var SECRET    = '';                        // set a string here + in the app to lock it down
 var ADMIN_KEY = '';                        // set a passphrase to gate edit + delete
 var MAX_LIST = 10000;
@@ -76,7 +77,7 @@ function doPost(e) {
 
     if (SECRET && body.secret !== SECRET) return reply({ ok: false, error: 'Bad secret' });
 
-    var admin = ['update', 'delete'].indexOf(body.action) !== -1;
+    var admin = ['update', 'delete', 'saveSettings'].indexOf(body.action) !== -1;
     if (admin && ADMIN_KEY && body.key !== ADMIN_KEY) {
       return reply({ ok: false, error: 'Admin key required' });
     }
@@ -91,6 +92,8 @@ function doPost(e) {
       case 'list':   return reply(list_(body.lite));
       case 'media':  return reply(media_(body.ids));
       case 'rev':    return reply(rev_());
+      case 'settings':     return reply(settings_());
+      case 'saveSettings': return reply(saveSettings_(body.settings));
       default:       return reply({ ok: false, error: 'Unknown action: ' + body.action });
     }
   } catch (err) {
@@ -341,6 +344,63 @@ function media_(ids) {
     }
   }
   return { ok: true, media: out };
+}
+
+/* ── how the app looks ─────────────────────────────────────────────────
+   The logo and the name live in the sheet beside the entries, so the app
+   can be rebranded without touching the code or redeploying anything. It is
+   a second tab rather than more columns on the first: it holds one of each
+   thing, not one per entry, and the Log Book tab is addressed by position.
+   The tab is hidden — it is written through the admin page, not by hand. */
+function settingsSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var s = ss.getSheetByName(SETTINGS_TAB);
+  if (!s) {
+    s = ss.insertSheet(SETTINGS_TAB);
+    s.getRange(1, 1, 1, 2).setValues([['Key', 'Value']])
+      .setFontWeight('bold').setBackground('#0e1424').setFontColor('#e7eefc');
+    s.setFrozenRows(1);
+    s.setColumnWidth(1, 150);
+    try { s.hideSheet(); } catch (ignore) {}
+  }
+  return s;
+}
+
+function settings_() {
+  var s = settingsSheet_();
+  var last = s.getLastRow();
+  var out = {};
+  if (last >= 2) {
+    var v = s.getRange(2, 1, last - 1, 2).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (v[i][0]) out[String(v[i][0])] = String(v[i][1] == null ? '' : v[i][1]);
+    }
+  }
+  return { ok: true, settings: out };
+}
+
+/** Merge a patch into the stored settings. A key set to '' is cleared. */
+function saveSettings_(patch) {
+  if (!patch) return { ok: false, error: 'settings are required' };
+  var s = settingsSheet_();
+  var cur = settings_().settings;
+
+  for (var k in patch) {
+    if (!patch.hasOwnProperty(k)) continue;
+    var v = String(patch[k] == null ? '' : patch[k]);
+    if (v.length > CELL_LIMIT) return { ok: false, error: 'That picture is too large to store' };
+    cur[k] = v;
+  }
+
+  var keys = [];
+  for (var key in cur) if (cur.hasOwnProperty(key) && cur[key] !== '') keys.push(key);
+
+  if (s.getLastRow() > 1) s.getRange(2, 1, s.getLastRow() - 1, 2).clearContent();
+  if (keys.length) {
+    s.getRange(2, 1, keys.length, 2).setValues(keys.map(function (key) { return [key, cur[key]]; }));
+  }
+  bump_();
+  return { ok: true, settings: settings_().settings };
 }
 
 /* ── helpers ───────────────────────────────────────────────────────── */

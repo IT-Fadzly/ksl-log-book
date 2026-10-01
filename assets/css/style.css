@@ -426,6 +426,43 @@ input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
 .pager-btn:active:not([disabled]) { transform: scale(.9); }
 .pager-btn[disabled] { opacity: .3; pointer-events: none; }
 
+/* ── compact rows ──────────────────────────────────────────────────────
+   The desk is read all day, so an entry is a tight two-line row rather than
+   a card: the same facts, roughly twice as many of them on a screen. The
+   colour bar, the hover lift and the priority tint are kept — only the air
+   between them goes. */
+.entry.compact {
+  border-radius: 1rem;
+  padding: .6rem .8rem .6rem 1.05rem;
+  box-shadow: none;
+}
+.entry.compact:hover { transform: none; border-color: rgb(var(--muted)); box-shadow: var(--shadow-sm); }
+.entry.compact::before { top: .45rem; bottom: .45rem; width: 4px; }
+.entry.compact .ent-top { display: flex; align-items: center; gap: .5rem; }
+.entry.compact .ent-sub { display: flex; align-items: baseline; gap: .5rem; margin-top: .15rem; }
+.entry.compact .ent-req {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12.5px; color: rgb(var(--subink));
+}
+.entry.compact .pill { padding: .1rem .45rem; font-size: 10px; }
+
+/* The list itself closes up to match: cards want air between them, rows do
+   not, and a hairline reads as one table rather than a stack of boxes. */
+.list-compact { display: flex; flex-direction: column; gap: .3rem; }
+
+/* ── the brand ─────────────────────────────────────────────────────────
+   The badge is a fixed square whatever is dropped into it, so a tall logo
+   and a wide one both sit in the header without pushing it about. */
+#brand-badge img { height: 100%; width: 100%; object-fit: contain; }
+
+/* Centred placement puts the brand on its own line, with the buttons under
+   it. Absolute centring would have to dodge those buttons at every width;
+   this simply wraps, which holds at any size. */
+.brand-center { flex-wrap: wrap; justify-content: center; }
+.brand-center #brand { flex: 0 0 100%; justify-content: center; text-align: center; }
+.brand-center #brand > div { flex: 0 1 auto; }
+
 /* ── the desk gate ─────────────────────────────────────────────────── */
 .shake { animation: shake .4s; }
 @keyframes shake {

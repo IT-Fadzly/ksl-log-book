@@ -259,25 +259,19 @@ function render() {
   hydrateVisible(shown);
   $('#empty').classList.toggle('hidden', list.length > 0);
   $('#list').innerHTML = shown.map((r, i) => `
-    <article class="entry !cursor-default" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 25, 250)}ms">
-      <div class="flex flex-wrap items-start gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
-            <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
-            <span class="text-[11px] text-muted">${esc(r.priority)} · ${esc(r.category)}</span>
-          </div>
-          <h4 class="mt-1 truncate font-display text-[15px] font-semibold">${esc(r.name)} <span class="text-muted">· ${esc(r.department)}</span></h4>
-          <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
-          <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)}</p>
-          ${timing(r) ? `<p class="mt-1 text-[11px] text-subink">${timing(r)}</p>` : ''}
-          ${r.resolution ? `<p class="mt-2 line-clamp-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12px] text-subink"><span class="font-semibold text-ink">Resolution · </span>${esc(r.resolution)}</p>` : ''}
-        </div>
-        ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
+    <article class="entry compact !cursor-default" style="--pri-c:${PRI_COLOR[r.priority] || 'var(--accent)'};animation-delay:${Math.min(i * 14, 160)}ms">
+      <div class="ent-top">
+        <span class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</span>
+        <span class="pill ${ST_CLASS[r.status] || 'st-open'}"><span class="pill-dot"></span>${esc(r.status)}</span>
+        <span class="truncate font-display text-[13.5px] font-semibold">${esc(r.name)}</span>
+        <span class="truncate text-[12px] text-muted">· ${esc(r.department)}</span>
+        <span class="ml-auto shrink-0 font-mono text-[11px] text-muted">${esc(r.date)} ${esc(r.time)}</span>
       </div>
-      <div class="mt-3 flex gap-2">
-        <button class="chip chip-ghost" data-act="edit" data-id="${esc(r.id)}">✏️ Edit</button>
-        <button class="chip chip-danger" data-act="delete" data-id="${esc(r.id)}">🗑 Delete</button>
+      <div class="ent-sub">
+        <span class="ent-req">${esc(r.request)}${r.resolution ? ` <span style="color:var(--c-aqua)">· ${esc(r.resolution)}</span>` : ''}</span>
+        <span class="shrink-0 text-[11px]" style="color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
+        <button class="chip chip-ghost shrink-0 !py-0.5 !px-2 !text-[11px]" data-act="edit" data-id="${esc(r.id)}">Edit</button>
+        <button class="chip chip-danger shrink-0 !py-0.5 !px-2 !text-[11px]" data-act="delete" data-id="${esc(r.id)}">Delete</button>
       </div>
     </article>`).join('');
 }
@@ -292,6 +286,99 @@ $('#btn-dates-clear').addEventListener('click', () => {
   $('#f-from').value = ''; $('#f-to').value = ''; page = 1; render();
 });
 $('#btn-reload').addEventListener('click', load);
+
+/* ── how the app looks ─────────────────────────────────────────────────
+   The logo and the name are kept in the sheet, not in the code, so the app
+   can be rebranded from this page without a redeploy. This is the only page
+   that writes them; every other page just reads. */
+const LOGO_LIMIT = 44000;                  // the cell holds 45,000; leave room
+let brand = { logo: '', appName: '', logoPos: 'left' };
+
+/** A logo small enough for a cell. PNG first, so a cut-out stays cut out. */
+function encodeLogo(img) {
+  const steps = [[256, 'image/png', 1], [192, 'image/png', 1], [256, 'image/jpeg', .85], [160, 'image/jpeg', .7]];
+  let out = '';
+  for (const [max, type, q] of steps) {
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * scale));
+    c.height = Math.max(1, Math.round(img.height * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    out = c.toDataURL(type, q);
+    if (out.length <= LOGO_LIMIT) return out;
+  }
+  return out;
+}
+
+function paintBrand(s) {
+  const badge = $('#brand-badge'), name = $('#brand-name');
+  const row = $('#brand') && $('#brand').parentElement;
+  if (badge) badge.innerHTML = s.logo ? `<img src="${s.logo}" alt="" />` : 'K';
+  if (name && s.appName) name.textContent = s.appName;
+  if (row) row.classList.toggle('brand-center', s.logoPos === 'center');
+}
+
+/** The panel's own controls, which are not the header. */
+function paintPanel() {
+  $('#logo-preview').innerHTML = brand.logo ? `<img src="${brand.logo}" alt="" class="h-full w-full object-contain" />` : 'none';
+  $('#set-name').value = brand.appName || '';
+  $$('#pos-group button').forEach(b => b.classList.toggle('is-on', b.dataset.pos === (brand.logoPos || 'left')));
+}
+
+async function loadBrand() {
+  try {
+    const { settings } = await call({ action: 'settings' });
+    brand = Object.assign({ logo: '', appName: '', logoPos: 'left' }, settings || {});
+    paintBrand(brand); paintPanel();
+  } catch (ignore) {
+    /* the app has its own badge to fall back on */
+  }
+}
+
+$('#logo-input').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    brand.logo = encodeLogo(img);
+    URL.revokeObjectURL(img.src);
+    e.target.value = '';                   // so the same file can be picked again
+    if (brand.logo.length > LOGO_LIMIT) {
+      brand.logo = '';
+      return toast('That picture will not shrink enough — try a smaller one.', 'err', 5000);
+    }
+    paintPanel();
+    toast('Logo ready. Press Save appearance to keep it.');
+  };
+  img.onerror = () => toast('That file could not be read as a picture.', 'err');
+  img.src = URL.createObjectURL(file);
+});
+
+$('#logo-clear').addEventListener('click', () => { brand.logo = ''; paintPanel(); });
+$('#pos-group').addEventListener('click', e => {
+  const b = e.target.closest('[data-pos]'); if (!b) return;
+  brand.logoPos = b.dataset.pos; paintPanel();
+});
+
+$('#brand-save').addEventListener('click', async () => {
+  const btn = $('#brand-save');
+  btn.disabled = true; $('#brand-state').textContent = 'Saving…';
+  try {
+    const { settings } = await call({
+      action: 'saveSettings',
+      settings: { logo: brand.logo, appName: $('#set-name').value.trim(), logoPos: brand.logoPos || 'left' }
+    });
+    brand = Object.assign({ logo: '', appName: '', logoPos: 'left' }, settings || {});
+    paintBrand(brand); paintPanel();
+    $('#brand-state').textContent = 'Saved';
+    toast('Appearance saved.');
+  } catch (err) {
+    $('#brand-state').textContent = '';
+    toast('Could not save: ' + err.message, 'err', 5000);
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { $('#brand-state').textContent = ''; }, 2500);
+  }
+});
 
 /* ── edit + delete ─────────────────────────────────────────────────── */
 $('#list').addEventListener('click', async e => {
@@ -420,5 +507,6 @@ setInterval(() => { if (!document.hidden) load(); }, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollRev(); });
 
 /* ── boot ──────────────────────────────────────────────────────────── */
+loadBrand();
 load();
 })();
