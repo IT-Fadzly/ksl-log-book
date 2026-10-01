@@ -272,6 +272,7 @@ function render() {
           : `<span class="pill st-open"><span class="pill-dot"></span>Waiting to start</span>
              <button class="btn-primary ml-auto !py-2 !px-4 !text-[14px]" data-act="start" data-id="${esc(r.id)}">Start ${PLAY}</button>`}
       </div>
+      ${r.resolution ? `<p class="mt-3 whitespace-pre-wrap rounded-xl border border-line bg-surface p-3 text-[12.5px] leading-relaxed text-subink"><span class="font-semibold text-ink">Resolution · </span>${esc(r.resolution)}</p>` : ''}
     </article>`;
   }).join('');
 }
@@ -284,6 +285,55 @@ setInterval(() => {
     el.innerHTML = CLOCK + ' ' + humanDur(Date.now() - Date.parse(t));
   });
 }, 30000);
+
+/* ── the closing note ──────────────────────────────────────────────────
+   A job is worth more in the book than the minutes it took, so finishing
+   asks what the trouble turned out to be or how it was put right. It stays
+   optional: a job that is done should never be held open for want of
+   something to write about it. */
+let askResolve = null;
+
+function closeNote(value) {
+  if (!askResolve) return;
+  const done = askResolve; askResolve = null;
+  $('#modal').classList.remove('is-open');
+  done(value);
+}
+
+/* Bound once, to the dialog rather than to its contents: the card is rewritten
+   for every job, and a listener added each time would be a listener leaked. */
+$('#modal').addEventListener('click', e => {
+  if (e.target === $('#modal') || e.target.closest('[data-act="cancel"]')) closeNote(null);
+});
+$('#modal').addEventListener('submit', e => {
+  e.preventDefault();
+  closeNote($('#fin-note').value.trim());
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNote(null); });
+
+/** Ask for the note. Resolves to the text, or to null if the job was left open. */
+function askNote(r) {
+  $('#modal-card').innerHTML = `
+    <div class="mb-4">
+      <p class="font-mono text-[11px] font-semibold text-neon">${esc(r.ticket)}</p>
+      <h3 class="mt-1 font-display text-xl font-bold">Finish this job</h3>
+      <p class="mt-1 text-[13px] text-subink">${esc(r.name)} · ${esc(r.department)}</p>
+    </div>
+    <form id="fin-form" class="space-y-3">
+      <label class="fl block">
+        <textarea id="fin-note" rows="4" maxlength="2000" placeholder=" " class="input peer"></textarea>
+        <span class="fl-label">What was it, and how was it fixed?</span>
+      </label>
+      <p class="text-[11px] text-muted">Optional — leave it empty if there is nothing to add. The time is stamped now and the job is marked Resolved.</p>
+      <div class="flex gap-2 pt-1">
+        <button type="submit" class="btn-primary flex-1 !py-2.5">Finish ${TICK}</button>
+        <button type="button" data-act="cancel" class="btn-ghost !py-2.5">Cancel</button>
+      </div>
+    </form>`;
+  $('#modal').classList.add('is-open');
+  setTimeout(() => { const t = $('#fin-note'); if (t) t.focus(); }, 60);
+  return new Promise(res => { askResolve = res; });
+}
 
 /* ── finish a job ──────────────────────────────────────────────────── */
 $('#list').addEventListener('click', async e => {
@@ -309,14 +359,16 @@ $('#list').addEventListener('click', async e => {
   }
 
   if (b.dataset.act !== 'finish') return;
-  if (!confirm(`Finish ${r.ticket} — ${r.name}?\n\nThe time is stamped now and the job is marked Resolved.`)) return;
+  const note = await askNote(r);
+  if (note === null) return;                 // the dialog was dismissed
 
   b.disabled = true; b.textContent = 'Finishing…';
   try {
-    const res = await call({ action: 'finish', id: r.id });
+    const res = await call({ action: 'finish', id: r.id, note: note });
     Object.assign(r, {
       status: 'Resolved', timeReturned: res.timeReturned,
-      duration: res.duration, finishedAt: res.finishedAt
+      duration: res.duration, finishedAt: res.finishedAt,
+      resolution: res.resolution || note
     });
     buzz([18, 40, 18]); celebrate();
     toast(`${r.ticket} done in ${res.duration}`);

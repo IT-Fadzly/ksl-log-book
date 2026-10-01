@@ -271,6 +271,7 @@ function render() {
           <p class="mt-1 line-clamp-2 text-[13px] text-subink">${esc(r.request)}</p>
           <p class="mt-2 font-mono text-[11px] text-muted">${esc(r.date)} · ${esc(r.time)}</p>
           ${timing(r) ? `<p class="mt-1 text-[11px] text-subink">${timing(r)}</p>` : ''}
+          ${r.resolution ? `<p class="mt-2 line-clamp-2 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12px] text-subink"><span class="font-semibold text-ink">Resolution · </span>${esc(r.resolution)}</p>` : ''}
         </div>
         ${r.signature ? `<img src="${r.signature}" alt="signature" class="h-12 w-20 shrink-0 rounded-md border border-line bg-white object-contain" />` : ''}
       </div>
@@ -348,6 +349,7 @@ async function openEdit(r) {
         <label class="fl"><select name="status" class="input">${opts(STATUSES, r.status)}</select><span class="fl-label fl-static">Status</span></label>
       </div>
       <label class="fl block"><textarea name="request" rows="4" placeholder=" " class="input peer">${esc(r.request)}</textarea><span class="fl-label">Request</span></label>
+      <label class="fl block"><textarea name="resolution" rows="3" maxlength="2000" placeholder=" " class="input peer">${esc(r.resolution || '')}</textarea><span class="fl-label">Resolution — what IT did</span></label>
 
       ${r.photo ? `<div><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Photo</p><img src="${r.photo}" alt="" class="w-full rounded-xl border border-line" /></div>` : ''}
       ${r.signature ? `<div><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Signature</p><img src="${r.signature}" alt="" class="w-full rounded-xl border border-line bg-white" /></div>` : ''}
@@ -368,7 +370,8 @@ async function openEdit(r) {
       date: f.date.value, time: f.time.value,
       name: f.name.value.trim(),
       department: f.department.value, category: f.category.value,
-      priority: f.priority.value, status: f.status.value, request: f.request.value.trim()
+      priority: f.priority.value, status: f.status.value, request: f.request.value.trim(),
+      resolution: f.resolution.value.trim()
     };
     if (!patch.name || !patch.request) return toast('Name and request cannot be empty.', 'err');
 

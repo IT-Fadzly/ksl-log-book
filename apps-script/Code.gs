@@ -41,7 +41,7 @@ var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
   'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
   'Synced At', 'Signature Data', 'Photo Data', 'Time Out', 'Time Returned',
-  'Duration', 'Started At', 'Finished At'
+  'Duration', 'Started At', 'Finished At', 'Resolution'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
@@ -60,6 +60,8 @@ var COL_TIME_BACK = 19;
 var COL_DURATION  = 20;
 var COL_STARTED   = 21;
 var COL_FINISHED  = 22;
+var COL_RESOLUTION = 23;   /* what IT wrote as the job was closed: what the
+                              problem turned out to be, or how it was fixed */
 
 /* New columns are appended, never inserted: the row layout is addressed by
    position, so moving a column would misread every existing row. */
@@ -84,7 +86,7 @@ function doPost(e) {
       case 'append': return reply(append_(body.entry));
       case 'update': return reply(update_(body.entry));
       case 'start':  return reply(start_(body.id));
-      case 'finish': return reply(finish_(body.id));
+      case 'finish': return reply(finish_(body.id, body.note));
       case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_(body.lite));
       case 'media':  return reply(media_(body.ids));
@@ -192,7 +194,7 @@ function start_(id) {
 }
 
 /** Stop the clock on a task: finish time, duration, and status Resolved. */
-function finish_(id) {
+function finish_(id, note) {
   if (!id) return { ok: false, error: 'id is required' };
   var s = sheet_();
   var row = findRow_(s, id);
@@ -206,14 +208,19 @@ function finish_(id) {
   var now = new Date();
   var dur = humanDur_(now.getTime() - started.getTime());
 
+  /* The closing note is optional — a job that is simply done should not be
+     held up for want of something to say about it. */
+  var resolution = String(note == null ? '' : note).trim().slice(0, 2000);
+
   s.getRange(row, COL_TIME_BACK).setValue(fmtTime_(now));
   s.getRange(row, COL_DURATION).setValue(dur);
   s.getRange(row, COL_FINISHED).setValue(now);
   s.getRange(row, COL_STATUS).setValue('Resolved');
+  if (resolution) s.getRange(row, COL_RESOLUTION).setValue(resolution);
 
   bump_();
   return {
-    ok: true, id: id, row: row,
+    ok: true, id: id, row: row, resolution: resolution,
     timeReturned: fmtTime_(now), duration: dur, finishedAt: now.toISOString(), status: 'Resolved'
   };
 }
@@ -267,7 +274,7 @@ function list_(lite) {
      nothing. Columns 11 and 12 carry the cheap 'signed' / 'photo' markers,
      which is all the app needs in order to know a picture exists. */
   var head = s.getRange(start, 1, n, 14).getValues();             // Entry ID → Created
-  var tail = s.getRange(start, COL_TIME_OUT, n, 5).getValues();   // Time Out → Finished At
+  var tail = s.getRange(start, COL_TIME_OUT, n, 6).getValues();   // Time Out → Resolution
   var pics = lite ? null : s.getRange(start, COL_SIG_DATA, n, 2).getValues();
 
   // One malformed cell must not cost the whole listing, so each row is
@@ -288,6 +295,7 @@ function list_(lite) {
         timeOut: fmtTime_(t[0]), timeReturned: fmtTime_(t[1]),
         duration: String(t[2] || ''),
         startedAt: iso_(t[3]), finishedAt: iso_(t[4]),
+        resolution: String(t[5] || ''),
         device: String(r[12]), created: iso_(r[13])
       });
     } catch (ignore) {}
@@ -401,7 +409,8 @@ function toRow_(entry, existing) {
     entry.timeReturned || existing[18] || '',
     entry.duration     || existing[19] || '',
     entry.startedAt    || existing[20] || '',
-    entry.finishedAt   || existing[21] || ''
+    entry.finishedAt   || existing[21] || '',
+    entry.resolution != null ? entry.resolution : (existing[22] || '')
   ];
 }
 

@@ -588,6 +588,11 @@ async function openDetail(id) {
       <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Took</p><p class="font-mono text-[15px] font-semibold">${esc(r.duration || (r.startedAt ? humanDur(Date.now() - Date.parse(r.startedAt)) + '…' : '—'))}</p></div>
     </div>` : ''}
     <p class="whitespace-pre-wrap rounded-xl border border-line bg-panel/60 p-3 text-[13px] leading-relaxed">${esc(r.request)}</p>
+    ${r.resolution ? `
+    <div class="mt-3">
+      <p class="mb-1 text-[11px] uppercase tracking-wider text-muted">What IT did</p>
+      <p class="whitespace-pre-wrap rounded-xl border p-3 text-[13px] leading-relaxed" style="border-color:color-mix(in srgb, var(--c-aqua) 40%, transparent)">${esc(r.resolution)}</p>
+    </div>` : ''}
     ${r.photo ? `<img src="${r.photo}" alt="attached photo" class="mt-3 w-full rounded-xl border border-line object-cover" />` : ''}
     ${r.signature ? `<div class="mt-3"><p class="mb-1 text-[11px] uppercase tracking-wider text-muted">Signature</p><img src="${r.signature}" alt="signature" class="w-full rounded-xl border border-line bg-white" /></div>` : ''}
     <div class="mt-5 flex flex-wrap gap-2">
@@ -616,7 +621,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 /* ── export (of what is on screen; the sheet stays the record) ─────── */
 $('#btn-export').addEventListener('click', () => {
   if (!rows.length) return toast('Nothing to export.', 'err');
-  const cols = ['ticket', 'date', 'time', 'timeOut', 'timeReturned', 'duration', 'name', 'department', 'category', 'priority', 'status', 'request', 'created'];
+  const cols = ['ticket', 'date', 'time', 'timeOut', 'timeReturned', 'duration', 'name', 'department', 'category', 'priority', 'status', 'request', 'resolution', 'created'];
   const csv = [cols.join(',')].concat(rows.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');

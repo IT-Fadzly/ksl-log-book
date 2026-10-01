@@ -32,7 +32,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=12" />
+<link rel="stylesheet" href="assets/css/style.css?v=13" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -120,6 +120,11 @@ tailwind.config = {
   </div>
 </main>
 
+
+<!-- the finish dialog: the closing note is written here -->
+<div id="modal" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/70 backdrop-blur-sm sm:items-center sm:p-6">
+  <div id="modal-card" class="glass max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-b-none rounded-t-3xl p-5 sm:rounded-3xl"></div>
+</div>
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"></div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 
