@@ -42,7 +42,7 @@ var HEADERS = [
   'Entry ID', 'Ticket', 'Date', 'Time', 'Name', 'Department', 'Category',
   'Priority', 'Request', 'Status', 'Signature', 'Photo', 'Device', 'Created',
   'Synced At', 'Signature Data', 'Photo Data', 'Time Out', 'Time Returned',
-  'Duration', 'Started At', 'Finished At', 'Resolution'
+  'Duration', 'Started At', 'Finished At', 'Resolution', 'Paused At', 'Held Ms'
 ];
 var COL_SIGNATURE = 11;
 var COL_PHOTO     = 12;
@@ -63,6 +63,16 @@ var COL_STARTED   = 21;
 var COL_FINISHED  = 22;
 var COL_RESOLUTION = 23;   /* what IT wrote as the job was closed: what the
                               problem turned out to be, or how it was fixed */
+
+/* A job that waits overnight for a part is not a job being worked on, so the
+   clock can be held. 'Paused At' is the moment it went on hold and is empty
+   whenever the clock is running; 'Held Ms' is the time already spent on hold
+   across every earlier pause. The worked time is therefore
+       (finish or now) − start − held − (now − pausedAt, if on hold)
+   and the calendar days it spanned are counted separately: the two answer
+   different questions, and a job held over a weekend needs both. */
+var COL_PAUSED = 24;
+var COL_HELD   = 25;
 
 /* New columns are appended, never inserted: the row layout is addressed by
    position, so moving a column would misread every existing row. */
@@ -87,6 +97,8 @@ function doPost(e) {
       case 'append': return reply(append_(body.entry));
       case 'update': return reply(update_(body.entry));
       case 'start':  return reply(start_(body.id));
+      case 'pause':  return reply(pause_(body.id));
+      case 'resume': return reply(resume_(body.id));
       case 'finish': return reply(finish_(body.id, body.note));
       case 'delete': return reply(delete_(body.id));
       case 'list':   return reply(list_(body.lite));
@@ -196,6 +208,51 @@ function start_(id) {
   return { ok: true, id: id, row: row, timeOut: fmtTime_(now), startedAt: now.toISOString(), status: 'In Progress' };
 }
 
+/** Hold the clock: the job is still open, but nobody is working on it. */
+function pause_(id) {
+  if (!id) return { ok: false, error: 'id is required' };
+  var s = sheet_();
+  var row = findRow_(s, id);
+  if (!row) return { ok: false, error: 'Not found: ' + id };
+
+  var vals = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  if (vals[COL_FINISHED - 1]) return { ok: false, error: 'This job is already finished' };
+  if (!vals[COL_STARTED - 1]) return { ok: false, error: 'Press Start before holding this job' };
+  if (vals[COL_PAUSED - 1]) return { ok: false, error: 'This job is already on hold' };
+
+  var now = new Date();
+  s.getRange(row, COL_PAUSED).setValue(now);
+  s.getRange(row, COL_STATUS).setValue('On Hold');
+
+  bump_();
+  return {
+    ok: true, id: id, row: row, status: 'On Hold',
+    pausedAt: now.toISOString(), heldMs: Number(vals[COL_HELD - 1] || 0)
+  };
+}
+
+/** Start the clock again, and keep the time spent waiting out of the total. */
+function resume_(id) {
+  if (!id) return { ok: false, error: 'id is required' };
+  var s = sheet_();
+  var row = findRow_(s, id);
+  if (!row) return { ok: false, error: 'Not found: ' + id };
+
+  var vals = s.getRange(row, 1, 1, HEADERS.length).getValues()[0];
+  if (vals[COL_FINISHED - 1]) return { ok: false, error: 'This job is already finished' };
+  if (!vals[COL_PAUSED - 1]) return { ok: false, error: 'This job is not on hold' };
+
+  var now = new Date();
+  var held = Number(vals[COL_HELD - 1] || 0) + (now.getTime() - new Date(vals[COL_PAUSED - 1]).getTime());
+
+  s.getRange(row, COL_HELD).setValue(held);
+  s.getRange(row, COL_PAUSED).setValue('');
+  s.getRange(row, COL_STATUS).setValue('In Progress');
+
+  bump_();
+  return { ok: true, id: id, row: row, status: 'In Progress', pausedAt: '', heldMs: held };
+}
+
 /** Stop the clock on a task: finish time, duration, and status Resolved. */
 function finish_(id, note) {
   if (!id) return { ok: false, error: 'id is required' };
@@ -209,7 +266,15 @@ function finish_(id, note) {
 
   var started = new Date(vals[COL_STARTED - 1]);
   var now = new Date();
-  var dur = humanDur_(now.getTime() - started.getTime());
+
+  /* Finishing a job that is still on hold closes that hold first, so the
+     waiting never lands in the worked time. */
+  var held = Number(vals[COL_HELD - 1] || 0);
+  if (vals[COL_PAUSED - 1]) held += now.getTime() - new Date(vals[COL_PAUSED - 1]).getTime();
+
+  var worked = Math.max(0, now.getTime() - started.getTime() - held);
+  var dur = humanDur_(worked);
+  var days = daysBetween_(started, now);
 
   /* The closing note is optional — a job that is simply done should not be
      held up for want of something to say about it. */
@@ -219,13 +284,23 @@ function finish_(id, note) {
   s.getRange(row, COL_DURATION).setValue(dur);
   s.getRange(row, COL_FINISHED).setValue(now);
   s.getRange(row, COL_STATUS).setValue('Resolved');
+  s.getRange(row, COL_PAUSED).setValue('');
+  s.getRange(row, COL_HELD).setValue(held);
   if (resolution) s.getRange(row, COL_RESOLUTION).setValue(resolution);
 
   bump_();
   return {
-    ok: true, id: id, row: row, resolution: resolution,
-    timeReturned: fmtTime_(now), duration: dur, finishedAt: now.toISOString(), status: 'Resolved'
+    ok: true, id: id, row: row, resolution: resolution, days: days,
+    timeReturned: fmtTime_(now), duration: dur, finishedAt: now.toISOString(),
+    pausedAt: '', heldMs: held, status: 'Resolved'
   };
+}
+
+/** Calendar days a job spanned, counting both ends: same day is 1. */
+function daysBetween_(a, b) {
+  var d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  var d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.max(1, Math.round((d1 - d0) / 86400000) + 1);
 }
 
 /** 5_700_000 ms -> "1h 35m". Anything under a minute reads as "just now". */
@@ -277,7 +352,7 @@ function list_(lite) {
      nothing. Columns 11 and 12 carry the cheap 'signed' / 'photo' markers,
      which is all the app needs in order to know a picture exists. */
   var head = s.getRange(start, 1, n, 14).getValues();             // Entry ID → Created
-  var tail = s.getRange(start, COL_TIME_OUT, n, 6).getValues();   // Time Out → Resolution
+  var tail = s.getRange(start, COL_TIME_OUT, n, 8).getValues();   // Time Out → Held Ms
   var pics = lite ? null : s.getRange(start, COL_SIG_DATA, n, 2).getValues();
 
   // One malformed cell must not cost the whole listing, so each row is
@@ -299,6 +374,7 @@ function list_(lite) {
         duration: String(t[2] || ''),
         startedAt: iso_(t[3]), finishedAt: iso_(t[4]),
         resolution: String(t[5] || ''),
+        pausedAt: iso_(t[6]), heldMs: Number(t[7] || 0),
         device: String(r[12]), created: iso_(r[13])
       });
     } catch (ignore) {}
@@ -470,7 +546,9 @@ function toRow_(entry, existing) {
     entry.duration     || existing[19] || '',
     entry.startedAt    || existing[20] || '',
     entry.finishedAt   || existing[21] || '',
-    entry.resolution != null ? entry.resolution : (existing[22] || '')
+    entry.resolution != null ? entry.resolution : (existing[22] || ''),
+    entry.pausedAt != null ? entry.pausedAt : (existing[23] || ''),
+    entry.heldMs    != null ? entry.heldMs    : (existing[24] || 0)
   ];
 }
 

@@ -16,9 +16,9 @@ const DEPARTMENTS = ['IT', 'Finance', 'F&B', 'Sales', 'Kitchen', 'Marketing', 'R
                      'Front Office', 'Housekeeping', 'Security', 'Onsen Spa', 'HR', 'Maintenance', 'Receiving'];
 const CATEGORIES  = ['Hardware', 'Software', 'System', 'Network', 'Access', 'Maintenance', 'Other'];
 const PRIORITIES  = ['Low', 'Medium', 'High', 'Critical'];
-const STATUSES    = ['Open', 'In Progress', 'Resolved'];
+const STATUSES    = ['Open', 'In Progress', 'On Hold', 'Resolved'];
 const PRI_COLOR   = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
-const ST_CLASS    = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resolved': 'st-resolved' };
+const ST_CLASS    = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'On Hold': 'st-hold', 'Resolved': 'st-resolved' };
 
 let rows = [], adminKey = '';
 
@@ -36,16 +36,45 @@ function humanDur(ms) {
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
 }
+/* ── two different clocks ──────────────────────────────────────────────
+   A job left overnight for a part was not being worked on all night, so the
+   time IT held it is taken out of the worked total. How long the job stayed
+   open is a separate question — a part that takes three days to arrive is
+   worth seeing — so the calendar days are counted on their own. */
+function workedMs(r) {
+  if (!r.startedAt) return 0;
+  const start = Date.parse(r.startedAt);
+  const end = r.finishedAt ? Date.parse(r.finishedAt) : Date.now();
+  const hold = r.pausedAt ? (end - Date.parse(r.pausedAt)) : 0;
+  return Math.max(0, end - start - Number(r.heldMs || 0) - hold);
+}
+
+/** Calendar days spanned, counting both ends: finished the same day is 1. */
+function daysSpan(r) {
+  if (!r.startedAt) return 1;
+  const a = new Date(r.startedAt), b = r.finishedAt ? new Date(r.finishedAt) : new Date();
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.max(1, Math.round((d1 - d0) / 86400000) + 1);
+}
+
+/** " · 3 days" — said only when it is more than the one day it usually is. */
+const daysLabel = r => { const d = daysSpan(r); return d > 1 ? ` · ${d} days` : ''; };
+
 function timing(r) {
-  if (r.duration || r.finishedAt) {
-    const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
-    return `<span class="inline-flex items-center gap-1" style="color:var(--c-aqua)">${TICK} ${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
+  if (r.finishedAt || r.duration) {
+    const took = r.duration || humanDur(workedMs(r));
+    const span = `${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-aqua)">${TICK} ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}${esc(daysLabel(r))}</span>`;
+  }
+  if (r.pausedAt) {
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} on hold after <b>${esc(humanDur(workedMs(r)))}</b>${esc(daysLabel(r))}</span>`;
   }
   if (r.startedAt || r.timeOut) {
-    const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
-    return `<span class="inline-flex items-center gap-1" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}</span>`;
+    const run = r.startedAt ? ` · running <b>${esc(humanDur(workedMs(r)))}</b>` : '';
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}${esc(daysLabel(r))}</span>`;
   }
-  return `<span class="inline-flex items-center gap-1" style="color:var(--c-yellow)">${CLOCK} waiting for IT to start</span>`;
+  return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-yellow)">${CLOCK} waiting for IT to start</span>`;
 }
 
 /* ── toast ─────────────────────────────────────────────────────────── */
@@ -151,7 +180,7 @@ function hydrateVisible(list) {
    sheet, so every admin sees the same figures. */
 const pad = n => String(n).padStart(2, '0');
 const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const ST_COLOR = { 'Open': 'var(--c-yellow)', 'In Progress': 'var(--c-blue)', 'Resolved': 'var(--c-aqua)' };
+const ST_COLOR = { 'Open': 'var(--c-yellow)', 'In Progress': 'var(--c-blue)', 'On Hold': 'var(--c-orange)', 'Resolved': 'var(--c-aqua)' };
 
 function renderStats() {
   const total = rows.length;

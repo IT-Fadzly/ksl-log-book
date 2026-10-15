@@ -115,7 +115,7 @@ const pad = n => String(n).padStart(2, '0');
 const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-const ST_CLASS  = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'Resolved': 'st-resolved' };
+const ST_CLASS  = { 'Open': 'st-open', 'In Progress': 'st-in-progress', 'On Hold': 'st-hold', 'Resolved': 'st-resolved' };
 
 /* Drawn marks rather than emoji: they take the surrounding colour and stay
    crisp at any size, and every platform renders them identically. */
@@ -131,15 +131,43 @@ function humanDur(ms) {
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
 }
+/* ── two different clocks ──────────────────────────────────────────────
+   A job left overnight for a part was not being worked on all night, so the
+   time IT held it is taken out of the worked total. How long the job stayed
+   open is a separate question — a part that takes three days to arrive is
+   worth seeing — so the calendar days are counted on their own. */
+function workedMs(r) {
+  if (!r.startedAt) return 0;
+  const start = Date.parse(r.startedAt);
+  const end = r.finishedAt ? Date.parse(r.finishedAt) : Date.now();
+  const hold = r.pausedAt ? (end - Date.parse(r.pausedAt)) : 0;
+  return Math.max(0, end - start - Number(r.heldMs || 0) - hold);
+}
+
+/** Calendar days spanned, counting both ends: finished the same day is 1. */
+function daysSpan(r) {
+  if (!r.startedAt) return 1;
+  const a = new Date(r.startedAt), b = r.finishedAt ? new Date(r.finishedAt) : new Date();
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.max(1, Math.round((d1 - d0) / 86400000) + 1);
+}
+
+/** " · 3 days" — said only when it is more than the one day it usually is. */
+const daysLabel = r => { const d = daysSpan(r); return d > 1 ? ` · ${d} days` : ''; };
+
 function timing(r) {
   if (r.finishedAt || r.duration) {
-    const took = r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '');
+    const took = r.duration || humanDur(workedMs(r));
     const span = `${esc(r.timeOut || '—')} → <b>${esc(r.timeReturned || '—')}</b>`;
-    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-aqua)">${TICK} ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}</span>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-aqua)">${TICK} ${span}${took ? ` · took <b>${esc(took)}</b>` : ''}${esc(daysLabel(r))}</span>`;
+  }
+  if (r.pausedAt) {
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} on hold after <b>${esc(humanDur(workedMs(r)))}</b>${esc(daysLabel(r))}</span>`;
   }
   if (r.startedAt || r.timeOut) {
-    const run = r.startedAt ? ` · running <b>${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</b>` : '';
-    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}</span>`;
+    const run = r.startedAt ? ` · running <b>${esc(humanDur(workedMs(r)))}</b>` : '';
+    return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-orange)">${CLOCK} started ${esc(r.timeOut || '—')}${run}${esc(daysLabel(r))}</span>`;
   }
   return `<span class="inline-flex items-center gap-1 text-[11px]" style="color:var(--c-yellow)">${CLOCK} waiting for IT to start</span>`;
 }
@@ -548,7 +576,7 @@ function renderLog() {
       <div class="ent-sub">
         <span class="ent-req">${esc(r.request)}</span>
         <span class="shrink-0 text-[11px]" style="color:${PRI_COLOR[r.priority]}">${esc(r.priority)}</span>
-        ${r.duration ? `<span class="shrink-0 font-mono text-[11px]" style="color:var(--c-aqua)">${esc(r.duration)}</span>` : ''}
+        ${r.duration ? `<span class="shrink-0 font-mono text-[11px]" style="color:var(--c-aqua)">${esc(r.duration)}${esc(daysLabel(r))}</span>` : ''}
       </div>
     </article>`).join('');
 }
@@ -583,8 +611,9 @@ async function openDetail(id) {
     <div class="mb-3 grid grid-cols-3 gap-2 rounded-xl border border-line bg-panel/60 p-3 text-center">
       <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Started</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeOut)}</p></div>
       <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Finished</p><p class="font-mono text-[15px] font-semibold">${esc(r.timeReturned || '—')}</p></div>
-      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Took</p><p class="font-mono text-[15px] font-semibold">${esc(r.duration || (r.startedAt ? humanDur(Date.now() - Date.parse(r.startedAt)) + '…' : '—'))}</p></div>
-    </div>` : ''}
+      <div><p class="text-[10.5px] uppercase tracking-wider text-muted">Took</p><p class="font-mono text-[15px] font-semibold">${esc(r.duration || (r.startedAt ? humanDur(workedMs(r)) + '…' : '—'))}</p></div>
+    </div>
+    ${daysSpan(r) > 1 ? `<p class="mb-3 text-center text-[11px] text-muted">Open across <b class="text-ink">${daysSpan(r)} days</b>${Number(r.heldMs) ? ` · <b class="text-ink">${esc(humanDur(Number(r.heldMs)))}</b> of that on hold` : ''}</p>` : ''}` : ''}
     <p class="whitespace-pre-wrap rounded-xl border border-line bg-panel/60 p-3 text-[13px] leading-relaxed">${esc(r.request)}</p>
     ${r.resolution ? `
     <div class="mt-3">

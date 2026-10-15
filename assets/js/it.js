@@ -18,6 +18,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" class="inline-block h-[14px] w-[14px] align-[-2px]"><path d="M4 13.5 9.8 19.5 20 5"/></svg>';
 const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="inline-block h-[13px] w-[13px] align-[-2px]"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.3 2"/></svg>';
 const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" class="inline-block h-[12px] w-[12px] align-[-1px]"><path d="M8 5.2v13.6L19 12z"/></svg>';
+const PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" class="inline-block h-[12px] w-[12px] align-[-1px]"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z"/></svg>';
 const PRI_COLOR = { Low: 'var(--c-aqua)', Medium: 'var(--c-blue)', High: 'var(--c-orange)', Critical: 'var(--c-red)' };
 const PRI_RANK  = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
@@ -43,8 +44,34 @@ function humanDur(ms) {
   return `${m}m`;
 }
 const isDone    = r => !!(r.finishedAt || r.duration || r.status === 'Resolved');
-const isRunning = r => !isDone(r) && !!r.startedAt;
+const isPaused  = r => !isDone(r) && !!r.pausedAt;
+const isRunning = r => !isDone(r) && !!r.startedAt && !r.pausedAt;
 const isWaiting = r => !isDone(r) && !r.startedAt;
+
+/* ── two different clocks ──────────────────────────────────────────────
+   A job left overnight for a part was not being worked on all night, so the
+   time on hold is taken out of the worked total. How long the job stayed
+   open is a separate question — a part that takes three days to arrive is
+   worth seeing — so the calendar days are counted on their own. */
+function workedMs(r) {
+  if (!r.startedAt) return 0;
+  const start = Date.parse(r.startedAt);
+  const end = r.finishedAt ? Date.parse(r.finishedAt) : Date.now();
+  const hold = r.pausedAt ? (end - Date.parse(r.pausedAt)) : 0;
+  return Math.max(0, end - start - Number(r.heldMs || 0) - hold);
+}
+
+/** Calendar days spanned, counting both ends: finished the same day is 1. */
+function daysSpan(r) {
+  if (!r.startedAt) return 1;
+  const a = new Date(r.startedAt), b = r.finishedAt ? new Date(r.finishedAt) : new Date();
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.max(1, Math.round((d1 - d0) / 86400000) + 1);
+}
+
+/** "· 3 days" — said only when it is more than the one day it usually is. */
+const daysLabel = r => { const d = daysSpan(r); return d > 1 ? ` · ${d} days` : ''; };
 
 /* ── chrome ────────────────────────────────────────────────────────── */
 function toast(msg, kind = 'ok', ms = 3400) {
@@ -124,13 +151,14 @@ $('#btn-reload').addEventListener('click', () => load(true));
 
 /* ── stats ─────────────────────────────────────────────────────────── */
 function renderStats() {
-  const waiting = rows.filter(isWaiting), running = rows.filter(isRunning);
+  const waiting = rows.filter(isWaiting), running = rows.filter(isRunning), held = rows.filter(isPaused);
   const today = isoOf(new Date());
   const doneToday = rows.filter(r => isDone(r) && r.finishedAt && r.finishedAt.slice(0, 10) === today);
 
   $('#s-wait').textContent = waiting.length;
   $('#s-open').textContent = running.length;
-  $('#open-count').textContent = waiting.length + running.length;
+  $('#s-open-foot').textContent = held.length ? `clock running · ${held.length} on hold` : 'clock running';
+  $('#open-count').textContent = waiting.length + running.length + held.length;
   $('#s-done').textContent = doneToday.length;
   $('#s-wait').style.color = 'var(--c-yellow)';
   $('#s-open').style.color = 'var(--c-orange)';
@@ -234,7 +262,9 @@ function visible() {
   const q = $('#search').value.trim().toLowerCase();
   const dp = $('#f-dept').value;
   return rows
-    .filter(r => tab === 'all' || (tab === 'wait' ? isWaiting(r) : tab === 'run' ? isRunning(r) : isDone(r)))
+    .filter(r => tab === 'all' || (tab === 'wait' ? isWaiting(r)
+      : tab === 'run' ? isRunning(r)
+      : tab === 'hold' ? isPaused(r) : isDone(r)))
     .filter(r => !dp || r.department === dp)
     .filter(r => !q || [r.ticket, r.name, r.department, r.request, r.category].join(' ').toLowerCase().includes(q))
     .sort((a, b) => (PRI_RANK[a.priority] ?? 9) - (PRI_RANK[b.priority] ?? 9));
@@ -259,9 +289,15 @@ function render() {
       <div class="ent-sub">
         <span class="ent-req">${esc(r.request)}${r.resolution ? ` <span style="color:var(--c-aqua)">· ${esc(r.resolution)}</span>` : ''}</span>
         ${done
-          ? `<span class="pill st-resolved shrink-0">${TICK} ${esc(r.duration || (r.startedAt && r.finishedAt ? humanDur(Date.parse(r.finishedAt) - Date.parse(r.startedAt)) : '—'))}</span>`
+          ? `<span class="pill st-resolved shrink-0">${TICK} ${esc(r.duration || humanDur(workedMs(r)))}</span>
+             ${daysSpan(r) > 1 ? `<span class="shrink-0 font-mono text-[11px] text-muted">${daysSpan(r)} days</span>` : ''}`
+          : isPaused(r)
+          ? `<span class="shrink-0 inline-flex items-center gap-1 font-mono text-[12px] font-semibold" style="color:var(--c-yellow)">${PAUSE} ${esc(humanDur(workedMs(r)))}${esc(daysLabel(r))}</span>
+             <button class="chip chip-ghost shrink-0 !py-0.5 !px-2 !text-[11px]" data-act="resume" data-id="${esc(r.id)}">Resume ${PLAY}</button>
+             <button class="btn-primary shrink-0 !py-1 !px-3 !text-[12px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`
           : isRunning(r)
-          ? `<span class="tick shrink-0 inline-flex items-center gap-1 font-mono text-[12px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt)}">${CLOCK} ${esc(humanDur(Date.now() - Date.parse(r.startedAt)))}</span>
+          ? `<span class="tick shrink-0 inline-flex items-center gap-1 font-mono text-[12px] font-semibold" style="color:var(--c-orange)" data-started="${esc(r.startedAt)}" data-held="${Number(r.heldMs || 0)}" data-days="${esc(daysLabel(r))}">${CLOCK} ${esc(humanDur(workedMs(r)))}${esc(daysLabel(r))}</span>
+             <button class="chip chip-ghost shrink-0 !py-0.5 !px-2 !text-[11px]" data-act="pause" data-id="${esc(r.id)}">Hold ${PAUSE}</button>
              <button class="btn-primary shrink-0 !py-1 !px-3 !text-[12px]" data-act="finish" data-id="${esc(r.id)}">Finish ${TICK}</button>`
           : `<button class="btn-primary shrink-0 !py-1 !px-3 !text-[12px]" data-act="start" data-id="${esc(r.id)}">Start ${PLAY}</button>`}
       </div>
@@ -274,7 +310,9 @@ function render() {
 setInterval(() => {
   $$('.tick').forEach(el => {
     const t = el.dataset.started; if (!t) return;
-    el.innerHTML = CLOCK + ' ' + humanDur(Date.now() - Date.parse(t));
+    // only the running jobs carry .tick — a held one is drawn once and left
+    const worked = Math.max(0, Date.now() - Date.parse(t) - Number(el.dataset.held || 0));
+    el.innerHTML = CLOCK + ' ' + humanDur(worked) + (el.dataset.days || '');
   });
 }, 30000);
 
@@ -350,6 +388,24 @@ $('#list').addEventListener('click', async e => {
     return;
   }
 
+  /* Hold and Resume: the job stays open, but the clock does not run while
+     nobody is on it. Waiting for a part is not work. */
+  if (b.dataset.act === 'pause' || b.dataset.act === 'resume') {
+    const holding = b.dataset.act === 'pause';
+    b.disabled = true; b.textContent = holding ? 'Holding…' : 'Resuming…';
+    try {
+      const res = await call({ action: b.dataset.act, id: r.id });
+      Object.assign(r, { status: res.status, pausedAt: res.pausedAt, heldMs: res.heldMs });
+      buzz();
+      toast(holding ? `${r.ticket} is on hold — the clock is stopped.` : `${r.ticket} is running again.`);
+      render(); renderStats();
+    } catch (err) {
+      b.disabled = false; b.innerHTML = holding ? 'Hold ' + PAUSE : 'Resume ' + PLAY;
+      toast('Could not change that: ' + err.message, 'err', 5000);
+    }
+    return;
+  }
+
   if (b.dataset.act !== 'finish') return;
   const note = await askNote(r);
   if (note === null) return;                 // the dialog was dismissed
@@ -360,7 +416,8 @@ $('#list').addEventListener('click', async e => {
     Object.assign(r, {
       status: 'Resolved', timeReturned: res.timeReturned,
       duration: res.duration, finishedAt: res.finishedAt,
-      resolution: res.resolution || note
+      resolution: res.resolution || note,
+      pausedAt: '', heldMs: res.heldMs
     });
     buzz([18, 40, 18]); celebrate();
     toast(`${r.ticket} done in ${res.duration}`);

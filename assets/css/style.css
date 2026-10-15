@@ -345,6 +345,7 @@ input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
 
 .st-open        { color: var(--c-yellow); }
 .st-in-progress { color: var(--c-blue); }
+.st-hold        { color: var(--c-orange); }
 .st-resolved    { color: var(--c-aqua); }
 
 /* ── stat tiles ────────────────────────────────────────────────────── */
