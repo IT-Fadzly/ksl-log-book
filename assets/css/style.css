@@ -477,7 +477,8 @@ input[type="date"].mini-select { background-image: none; padding-right: .9rem; }
 .toast {
   pointer-events: auto;
   display: flex; align-items: center; gap: .6rem;
-  max-width: 26rem; border-radius: 999px;
+  max-width: min(26rem, 100%); border-radius: 1.4rem;
+  overflow-wrap: anywhere;                 /* a long error carries URLs with nowhere to break */
   border: 1px solid rgb(var(--line));
   background: rgb(var(--panel));
   padding: .75rem 1.2rem; font-size: 14px; font-weight: 500; color: rgb(var(--ink));
