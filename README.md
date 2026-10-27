@@ -9,8 +9,9 @@ assets/css/style.css       theme tokens, ambient FX, components, charts
 assets/js/app.js           form, signature pad, storage, sync, dashboard
 apps-script/Code.gs        the Google Sheets backend — paste into Apps Script
 apps-script/appsscript.json  optional manifest that pins the single OAuth scope
-manifest.webmanifest       installable-app metadata
-sw.js                      offline cache (service worker)
+admin.html                 admin console — installable on a phone
+admin.webmanifest          install metadata for the admin console
+assets/icons/              home-screen icons
 ```
 
 ## What it does
@@ -65,6 +66,18 @@ Writes are **idempotent**: rows are keyed by Entry ID, so re-sending an entry up
 
 * keep the URL internal (it is not guessable), and/or
 * set `SECRET` in `Code.gs` to a phrase, and enter the same phrase in the app's **Shared secret** field. Requests without it are rejected.
+
+## Admin on the phone, with notifications
+
+Open `admin.html` on the phone and install it — Chrome on Android shows an **Install** button in the Notifications panel; on iPhone use Share → **Add to Home Screen**. There is deliberately no service worker, so the installed app never shows stale data.
+
+New requests are pushed to the admin's phone through [ntfy.sh](https://ntfy.sh) (Apps Script cannot send Web Push on its own):
+
+1. Install the free **ntfy** app on the phone.
+2. In the admin console's **Notifications** panel press **New topic**, then **Save**.
+3. Subscribe to that topic in ntfy (or press **Subscribe** on the phone), then press **Send test**.
+
+Only brand-new entries ring — a re-sent or edited entry does not. Priority maps across, so a *Critical* request arrives as an urgent alert. The topic is kept in the script's properties, never in the sheet; anyone who knows it can read the alerts, so keep the generated random one. This needs the `script.external_request` permission: after updating `Code.gs`, run `setup` once more to approve it, then deploy a new version.
 
 ## Notes
 

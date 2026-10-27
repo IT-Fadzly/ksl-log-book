@@ -8,6 +8,12 @@
 <meta name="robots" content="noindex" />
 <title>KSL Log Book · Admin</title>
 <link rel="icon" href="assets/icon.svg" />
+<!-- installable on a phone; no service worker, so nothing is ever cached -->
+<link rel="manifest" href="admin.webmanifest" />
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="KSL Admin" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
@@ -33,7 +39,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=15" />
+<link rel="stylesheet" href="assets/css/style.css?v=16" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -142,6 +148,42 @@ tailwind.config = {
           </div>
           <p class="text-[11px] text-muted">Kept in the sheet, so it survives a redeploy. Other screens pick it up the next time they are opened.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- new-request alerts on the admin's phone, through ntfy.sh -->
+    <div class="glass mt-4 p-5">
+      <h3 class="chart-title">Notifications</h3>
+      <p class="chart-sub">A push to your phone each time a new request is filed</p>
+
+      <ol class="mt-4 list-decimal space-y-1 pl-5 text-[13px] text-subink">
+        <li>Install the free <b>ntfy</b> app —
+          <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener" class="text-neon underline">Android</a> ·
+          <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener" class="text-neon underline">iPhone</a></li>
+        <li>Press <b>New topic</b>, then <b>Save</b>.</li>
+        <li>In ntfy, tap <b>+</b> and subscribe to the same topic — or press <b>Subscribe</b> on the phone.</li>
+        <li>Press <b>Send test</b>; the phone should ring within a few seconds.</li>
+      </ol>
+
+      <div class="mt-4 space-y-3">
+        <label class="fl block">
+          <input id="ntfy-topic" maxlength="64" autocomplete="off" spellcheck="false" placeholder=" " class="input peer font-mono" />
+          <span class="fl-label">Topic (empty = off)</span>
+        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="ntfy-new" class="chip chip-ghost">New topic</button>
+          <button id="ntfy-save" class="btn-primary !py-2.5 !px-5">Save</button>
+          <button id="ntfy-test" class="chip chip-ghost">Send test</button>
+          <a id="ntfy-sub" href="#" target="_blank" rel="noopener" class="chip chip-ghost" hidden>Subscribe</a>
+          <span id="ntfy-state" class="text-[12px] text-muted"></span>
+        </div>
+        <p class="text-[11px] text-muted">Anyone who knows the topic can read these alerts, so keep it long and random — New topic makes one. Kept in the script, not the sheet.</p>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-line/70 pt-4">
+        <span class="text-[13px] text-subink">Keep this page on the phone as an app:</span>
+        <button id="btn-install" class="chip chip-ghost" hidden>⤓ Install</button>
+        <span id="install-hint" class="text-[12px] text-muted">browser menu → <b>Add to Home Screen</b> (iPhone: Share → Add to Home Screen)</span>
       </div>
     </div>
 

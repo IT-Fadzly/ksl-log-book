@@ -409,6 +409,85 @@ $('#brand-save').addEventListener('click', async () => {
   }
 });
 
+/* ── notifications ─────────────────────────────────────────────────────
+   The script posts each new request to an ntfy.sh topic, and the ntfy app on
+   the admin's phone rings for it. The topic is the only thing guarding those
+   alerts, so the one this page makes is long and random. */
+let ntfyServer = 'https://ntfy.sh';
+
+function paintNtfy(topic) {
+  $('#ntfy-topic').value = topic || '';
+  const sub = $('#ntfy-sub');
+  sub.hidden = !topic;
+  // the ntfy app claims ntfy:// links on Android; elsewhere the web page offers it
+  const host = ntfyServer.replace(/^https?:\/\//, '');
+  sub.href = topic ? (/android/i.test(navigator.userAgent) ? `ntfy://${host}/${topic}` : `${ntfyServer}/${topic}`) : '#';
+}
+
+async function loadNtfy() {
+  try {
+    const d = await call({ action: 'notify' });
+    ntfyServer = d.server || ntfyServer;
+    paintNtfy(d.topic);
+  } catch (ignore) {
+    /* an older script without notifications: the panel just stays empty */
+  }
+}
+
+$('#ntfy-new').addEventListener('click', () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const rnd = [...bytes].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+  $('#ntfy-topic').value = `ksl-${rnd}`;
+  $('#ntfy-state').textContent = 'Not saved yet';
+});
+
+$('#ntfy-save').addEventListener('click', async () => {
+  const btn = $('#ntfy-save');
+  btn.disabled = true; $('#ntfy-state').textContent = 'Saving…';
+  try {
+    const d = await call({ action: 'saveNotify', topic: $('#ntfy-topic').value.trim(), click: location.href.split(/[?#]/)[0] });
+    paintNtfy(d.topic);
+    $('#ntfy-state').textContent = d.topic ? 'Saved' : 'Off';
+    toast(d.topic ? 'Notifications on.' : 'Notifications off.');
+  } catch (err) {
+    $('#ntfy-state').textContent = '';
+    toast('Could not save: ' + err.message, 'err', 5000);
+  } finally { btn.disabled = false; }
+});
+
+$('#ntfy-test').addEventListener('click', async () => {
+  const btn = $('#ntfy-test');
+  btn.disabled = true; $('#ntfy-state').textContent = 'Sending…';
+  try {
+    await call({ action: 'testNotify' });
+    $('#ntfy-state').textContent = 'Sent';
+    toast('Test sent — check the phone.');
+  } catch (err) {
+    $('#ntfy-state').textContent = '';
+    toast('Test failed: ' + err.message, 'err', 6000);
+  } finally { btn.disabled = false; }
+});
+
+/* ── install to home screen ────────────────────────────────────────────
+   Chrome on Android offers this itself; the button only shows when it has.
+   iPhone has no such event — there it is Share → Add to Home Screen. */
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); installEvt = e;
+  $('#btn-install').hidden = false; $('#install-hint').hidden = true;
+});
+$('#btn-install').addEventListener('click', async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  await installEvt.userChoice.catch(() => {});
+  installEvt = null; $('#btn-install').hidden = true;
+});
+window.addEventListener('appinstalled', () => { $('#btn-install').hidden = true; });
+// already opened from the home screen: nothing left to offer
+if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+  $('#btn-install').closest('div').style.display = 'none';   // .flex would beat [hidden]
+}
+
 /* ── edit + delete ─────────────────────────────────────────────────── */
 $('#list').addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -537,5 +616,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 
 /* ── boot ──────────────────────────────────────────────────────────── */
 loadBrand();
+loadNtfy();
 load();
 })();

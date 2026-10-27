@@ -7,9 +7,10 @@
  * Deploy → New deployment → Web app  (Execute as: Me, Access: Anyone).
  * Copy the /exec URL into the app's "Sheet" tab.
  *
- * Permissions: ONE scope — spreadsheets.currentonly, i.e. "this
- * spreadsheet, nothing else". No Drive access, no access to your other
- * files. You grant it once; people using the app never see a prompt.
+ * Permissions: spreadsheets.currentonly, i.e. "this spreadsheet, nothing
+ * else" — no Drive access, no access to your other files — plus
+ * script.external_request, used only to post new-request notifications to
+ * ntfy.sh. You grant them once; people using the app never see a prompt.
  *
  * Actions accepted on POST (body is JSON sent as text/plain):
  *   {action:'ping'}                    → connection test
@@ -26,6 +27,8 @@
  *   {action:'start', id:'...'}         → IT picks the job up; starts the clock
  *   {action:'finish', id:'...'}        → stamp the finish time and duration
  *   {action:'delete', id:'...'}        → remove a row and its pictures
+ *   {action:'notify'} / {action:'saveNotify', topic, click} / {action:'testNotify'}
+ *                                      → the ntfy.sh topic new requests are pushed to
  *
  * 'update' and 'delete' are the admin actions. Set ADMIN_KEY below and they
  * require it; 'append' and 'list' stay open so the log book itself works.
@@ -79,22 +82,41 @@ var COL_HELD   = 25;
 
 /* ── entry points ──────────────────────────────────────────────────── */
 
+/* Only writes queue for the lock. Reads never change a row, and the polling
+   from every open screen would otherwise stand in line behind a slow append
+   (inserting a picture takes seconds) until it timed out. */
+var WRITES = ['append', 'update', 'start', 'pause', 'resume', 'finish', 'delete', 'saveSettings'];
+
 function doPost(e) {
-  var lock = LockService.getScriptLock();
+  var lock = null;
   try {
-    lock.waitLock(25000);
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (WRITES.indexOf(body.action) !== -1) {
+      lock = LockService.getScriptLock();
+      lock.waitLock(28000);
+    }
 
     if (SECRET && body.secret !== SECRET) return reply({ ok: false, error: 'Bad secret' });
 
-    var admin = ['update', 'delete', 'saveSettings'].indexOf(body.action) !== -1;
+    var admin = ['update', 'delete', 'saveSettings', 'notify', 'saveNotify', 'testNotify'].indexOf(body.action) !== -1;
     if (admin && ADMIN_KEY && body.key !== ADMIN_KEY) {
       return reply({ ok: false, error: 'Admin key required' });
     }
 
     switch (body.action) {
       case 'ping':   return reply(ping_());
-      case 'append': return reply(append_(body.entry));
+      case 'append':
+        var added = append_(body.entry);
+        /* The row is safely in; let the next writer in before calling out to
+           ntfy, so a slow push never holds up anyone else's entry. */
+        if (added.ok && added.created) {
+          if (lock) { try { lock.releaseLock(); } catch (ignore) {} lock = null; }
+          notifyNew_(body.entry);
+        }
+        return reply(added);
+      case 'notify':     return reply(notifySettings_());
+      case 'saveNotify': return reply(saveNotify_(body.topic, body.click));
+      case 'testNotify': return reply(ntfy_({ title: 'KSL Log Book', message: 'Test notification — this phone will be told about new requests.', tags: ['white_check_mark'] }));
       case 'update': return reply(update_(body.entry));
       case 'start':  return reply(start_(body.id));
       case 'pause':  return reply(pause_(body.id));
@@ -111,7 +133,7 @@ function doPost(e) {
   } catch (err) {
     return reply({ ok: false, error: String(err && err.message || err) });
   } finally {
-    try { lock.releaseLock(); } catch (ignore) {}
+    if (lock) try { lock.releaseLock(); } catch (ignore) {}
   }
 }
 
@@ -172,7 +194,7 @@ function append_(entry) {
   var row = s.getLastRow();
   attach_(s, row, entry);
   bump_();
-  return { ok: true, row: row, id: entry.id };
+  return { ok: true, row: row, id: entry.id, created: true };
 }
 
 function update_(entry) {
@@ -477,6 +499,63 @@ function saveSettings_(patch) {
   }
   bump_();
   return { ok: true, settings: settings_().settings };
+}
+
+/* ── push to the admin's phone ─────────────────────────────────────────
+   Apps Script cannot do Web Push itself, so new requests are relayed through
+   ntfy.sh: the admin installs the ntfy app and subscribes to a topic, and
+   this posts to that topic. The topic lives in script properties rather than
+   the Settings tab — 'settings' is open to every page, and anyone who knows
+   the topic can read what is sent to it. */
+var NTFY_SERVER = 'https://ntfy.sh';
+var NTFY_PRIORITY = { Critical: 5, High: 4, Medium: 3, Low: 2 };
+
+function notifySettings_() {
+  var p = PropertiesService.getScriptProperties();
+  return { ok: true, topic: p.getProperty('ntfyTopic') || '', server: NTFY_SERVER };
+}
+
+/** An empty topic switches notifications off. */
+function saveNotify_(topic, click) {
+  topic = String(topic || '').trim();
+  if (topic && !/^[-_A-Za-z0-9]{6,64}$/.test(topic)) {
+    return { ok: false, error: 'Topic: 6-64 letters, digits, - or _' };
+  }
+  var p = PropertiesService.getScriptProperties();
+  if (topic) p.setProperty('ntfyTopic', topic); else p.deleteProperty('ntfyTopic');
+  if (click && /^https:\/\//.test(click)) p.setProperty('ntfyClick', String(click).slice(0, 500));
+  return notifySettings_();
+}
+
+function notifyNew_(e) {
+  try {
+    var req = String(e.request || '');
+    ntfy_({
+      title: 'New request · ' + (e.ticket || ''),
+      message: (e.name || '?') + ' · ' + (e.department || '?') + '\n' +
+               (e.category || '') + ' · ' + (e.priority || '') + '\n\n' +
+               (req.length > 300 ? req.slice(0, 300) + '…' : req),
+      priority: NTFY_PRIORITY[e.priority] || 3,
+      tags: [e.priority === 'Critical' ? 'rotating_light' : 'bell']
+    });
+  } catch (ignore) {}                       // a missed push must never cost the entry
+}
+
+/** Publish one message, as JSON so a Malay name or an emoji survives. */
+function ntfy_(msg) {
+  var p = PropertiesService.getScriptProperties();
+  var topic = p.getProperty('ntfyTopic');
+  if (!topic) return { ok: false, error: 'No topic set — notifications are off' };
+  msg.topic = topic;
+  var click = p.getProperty('ntfyClick');
+  if (click) msg.click = click;
+
+  var res = UrlFetchApp.fetch(NTFY_SERVER, {
+    method: 'post', contentType: 'application/json',
+    payload: JSON.stringify(msg), muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  return code < 300 ? { ok: true } : { ok: false, error: 'ntfy replied ' + code + ': ' + res.getContentText().slice(0, 200) };
 }
 
 /* ── helpers ───────────────────────────────────────────────────────── */
