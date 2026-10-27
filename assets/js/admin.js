@@ -501,7 +501,11 @@ $('#push-on').addEventListener('click', async () => {
     toast('Alerts on for this phone. Press Send test to try it.');
   } catch (err) {
     myToken = '';
-    toast('Could not turn on: ' + err.message, 'err', 6000);
+    // the browser itself could not reach its push service — never Firebase's doing
+    const hint = /push service/i.test(err.message)
+      ? ' — open this page in Google Chrome. In Brave: Settings → Privacy → turn on "Use Google services for push messaging".'
+      : '';
+    toast('Could not turn on: ' + err.message + hint, 'err', hint ? 12000 : 6000);
   } finally {
     btn.disabled = false; $('#push-state').textContent = '';
     paintPush(await pushBlocker().catch(() => ''));
