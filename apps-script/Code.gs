@@ -683,8 +683,13 @@ function reply(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/* Run this once from the editor to approve the single scope, then deploy. */
+/* Run this once from the editor to approve both scopes, then deploy. It
+   reaches ntfy as well as the sheet, so the consent screen asks for both —
+   and if appsscript.json still pins the sheet scope alone, the error shows
+   up here rather than on the admin's phone. */
 function setup() {
   var s = sheet_();
   Logger.log('Ready: %s / %s', s.getParent().getName(), s.getName());
+  var code = UrlFetchApp.fetch(NTFY_SERVER + '/v1/health', { muteHttpExceptions: true }).getResponseCode();
+  Logger.log('ntfy reachable: HTTP %s', code);
 }
