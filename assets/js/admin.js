@@ -426,10 +426,22 @@ function fbMessaging() {
   if (!messaging) {
     if (!firebase.apps.length) firebase.initializeApp(self.FIREBASE_CONFIG);
     messaging = firebase.messaging();
-    // with the app open the worker stays quiet, so say it here instead
-    messaging.onMessage(p => {
-      toast((p.notification && p.notification.title) || 'New request', 'ok', 5000);
+    /* With the app open the worker stays quiet, so the alert is raised here
+       instead — as a real notification too, not just a toast, or a phone
+       with the admin page left open would never ring. */
+    messaging.onMessage(async p => {
+      const n = p.notification || {};
+      toast(n.title || 'New request', 'ok', 5000);
       load();
+      try {
+        const reg = await pushReg();
+        if (reg && Notification.permission === 'granted') {
+          await reg.showNotification(n.title || 'KSL Log Book', {
+            body: n.body || '', icon: 'assets/icons/icon-192.png',
+            tag: p.data && p.data.id ? 'req-' + p.data.id : 'ksl', renotify: true
+          });
+        }
+      } catch (ignore) { /* the toast has already said it */ }
     });
   }
   return messaging;
