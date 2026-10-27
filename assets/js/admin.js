@@ -410,60 +410,131 @@ $('#brand-save').addEventListener('click', async () => {
 });
 
 /* ── notifications ─────────────────────────────────────────────────────
-   The script posts each new request to an ntfy.sh topic, and the ntfy app on
-   the admin's phone rings for it. The topic is the only thing guarding those
-   alerts, so the one this page makes is long and random. */
-let ntfyServer = 'https://ntfy.sh';
+   Firebase Cloud Messaging. Each phone turns alerts on for itself: it asks
+   permission, registers the push worker, gets a token from Firebase and
+   hands it to the script, which sends every new request to all such tokens.
+   An already-on phone re-sends its token on each visit, because Firebase
+   rotates them now and then and a stale one would quietly stop ringing. */
+const PUSH_SW = 'firebase-messaging-sw.js';
+let push = { configured: false, devices: 0 };       // what the script knows
+let myToken = '', messaging = null;
 
-function paintNtfy(topic) {
-  $('#ntfy-topic').value = topic || '';
-  const sub = $('#ntfy-sub');
-  sub.hidden = !topic;
-  // the ntfy app claims ntfy:// links on Android; elsewhere the web page offers it
-  const host = ntfyServer.replace(/^https?:\/\//, '');
-  sub.href = topic ? (/android/i.test(navigator.userAgent) ? `ntfy://${host}/${topic}` : `${ntfyServer}/${topic}`) : '#';
-}
+const fbReady = () => !!(window.firebase && self.FIREBASE_CONFIG && self.FIREBASE_CONFIG.apiKey && self.FIREBASE_VAPID_KEY);
+const pageUrl = () => location.href.split(/[?#]/)[0];
 
-async function loadNtfy() {
-  try {
-    const d = await call({ action: 'notify' });
-    ntfyServer = d.server || ntfyServer;
-    paintNtfy(d.topic);
-  } catch (ignore) {
-    /* an older script without notifications: the panel just stays empty */
+function fbMessaging() {
+  if (!messaging) {
+    if (!firebase.apps.length) firebase.initializeApp(self.FIREBASE_CONFIG);
+    messaging = firebase.messaging();
+    // with the app open the worker stays quiet, so say it here instead
+    messaging.onMessage(p => {
+      toast((p.notification && p.notification.title) || 'New request', 'ok', 5000);
+      load();
+    });
   }
+  return messaging;
 }
 
-$('#ntfy-new').addEventListener('click', () => {
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  const rnd = [...bytes].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
-  $('#ntfy-topic').value = `ksl-${rnd}`;
-  $('#ntfy-state').textContent = 'Not saved yet';
-});
+/** Why this phone cannot take pushes, or '' when it can. */
+async function pushBlocker() {
+  if (!fbReady()) return 'Firebase is not set up in firebase-config.js yet.';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (ios && !standalone) return 'On iPhone, add this page to the Home Screen and open it from there.';
+  if (!('serviceWorker' in navigator) || !('Notification' in window) || !(await firebase.messaging.isSupported())) {
+    return 'This browser cannot receive push alerts.';
+  }
+  if (Notification.permission === 'denied') return 'Alerts are blocked for this site — allow them in the browser settings, then reload.';
+  return '';
+}
 
-$('#ntfy-save').addEventListener('click', async () => {
-  const btn = $('#ntfy-save');
-  btn.disabled = true; $('#ntfy-state').textContent = 'Saving…';
+async function pushReg() {
+  const reg = await navigator.serviceWorker.getRegistration();
+  const w = reg && (reg.active || reg.waiting || reg.installing);
+  return w && w.scriptURL.indexOf(PUSH_SW) !== -1 ? reg : null;
+}
+
+async function tokenFor(reg) {
+  await navigator.serviceWorker.ready;
+  return fbMessaging().getToken({ vapidKey: self.FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
+}
+
+function paintPush(blocker) {
+  const n = push.devices || 0;
+  const many = `${n} phone${n === 1 ? '' : 's'} receive alerts.`;
+  let text;
+  if (blocker) text = blocker;
+  else if (!push.configured) text = 'Firebase is not set up in Apps Script yet — FCM_SERVICE_ACCOUNT is missing.';
+  else if (myToken) text = `✅ On for this phone. ${many}`;
+  else text = `Off for this phone. ${many}`;
+  $('#push-status').textContent = text;
+  $('#push-on').hidden = !!(blocker || myToken || !push.configured);
+  $('#push-off').hidden = !myToken;
+  $('#push-test').hidden = !push.configured || !n;
+}
+
+async function loadPush() {
+  try { push = await call({ action: 'notify' }); } catch (ignore) { /* an older script: shown as not set up */ }
+  let blocker;
+  try { blocker = await pushBlocker(); } catch (err) { blocker = 'This browser cannot receive push alerts.'; }
+  if (!blocker && push.configured && Notification.permission === 'granted') {
+    try {
+      const reg = await pushReg();
+      if (reg) {
+        myToken = await tokenFor(reg);
+        push = await call({ action: 'saveToken', token: myToken, click: pageUrl() });
+      }
+    } catch (ignore) { /* shown as off; turning it on again will say why */ }
+  }
+  paintPush(blocker);
+}
+
+$('#push-on').addEventListener('click', async () => {
+  const btn = $('#push-on');
+  btn.disabled = true; $('#push-state').textContent = 'Turning on…';
   try {
-    const d = await call({ action: 'saveNotify', topic: $('#ntfy-topic').value.trim(), click: location.href.split(/[?#]/)[0] });
-    paintNtfy(d.topic);
-    $('#ntfy-state').textContent = d.topic ? 'Saved' : 'Off';
-    toast(d.topic ? 'Notifications on.' : 'Notifications off.');
+    // ask first, straight from the tap: iPhone refuses a prompt that is not
+    if (await Notification.requestPermission() !== 'granted') throw new Error('Alerts were not allowed');
+    const reg = await navigator.serviceWorker.register(PUSH_SW);
+    myToken = await tokenFor(reg);
+    push = await call({ action: 'saveToken', token: myToken, click: pageUrl() });
+    toast('Alerts on for this phone. Press Send test to try it.');
   } catch (err) {
-    $('#ntfy-state').textContent = '';
-    toast('Could not save: ' + err.message, 'err', 5000);
-  } finally { btn.disabled = false; }
+    myToken = '';
+    toast('Could not turn on: ' + err.message, 'err', 6000);
+  } finally {
+    btn.disabled = false; $('#push-state').textContent = '';
+    paintPush(await pushBlocker().catch(() => ''));
+  }
 });
 
-$('#ntfy-test').addEventListener('click', async () => {
-  const btn = $('#ntfy-test');
-  btn.disabled = true; $('#ntfy-state').textContent = 'Sending…';
+$('#push-off').addEventListener('click', async () => {
+  const btn = $('#push-off');
+  btn.disabled = true; $('#push-state').textContent = 'Turning off…';
   try {
-    await call({ action: 'testNotify' });
-    $('#ntfy-state').textContent = 'Sent';
+    push = await call({ action: 'dropToken', token: myToken });
+    try { await fbMessaging().deleteToken(); } catch (ignore) {}
+    const reg = await pushReg();
+    if (reg) await reg.unregister();
+    myToken = '';
+    toast('Alerts off for this phone.');
+  } catch (err) {
+    toast('Could not turn off: ' + err.message, 'err', 5000);
+  } finally {
+    btn.disabled = false; $('#push-state').textContent = '';
+    paintPush('');
+  }
+});
+
+$('#push-test').addEventListener('click', async () => {
+  const btn = $('#push-test');
+  btn.disabled = true; $('#push-state').textContent = 'Sending…';
+  try {
+    const d = await call({ action: 'testNotify' });
+    $('#push-state').textContent = `Sent to ${d.sent}` + (d.failed ? `, ${d.failed} unreachable` : '');
     toast('Test sent — check the phone.');
   } catch (err) {
-    $('#ntfy-state').textContent = '';
+    $('#push-state').textContent = '';
     toast('Test failed: ' + err.message, 'err', 6000);
   } finally { btn.disabled = false; }
 });
@@ -616,6 +687,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 
 /* ── boot ──────────────────────────────────────────────────────────── */
 loadBrand();
-loadNtfy();
+loadPush();
 load();
 })();

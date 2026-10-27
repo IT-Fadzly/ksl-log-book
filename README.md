@@ -69,15 +69,18 @@ Writes are **idempotent**: rows are keyed by Entry ID, so re-sending an entry up
 
 ## Admin on the phone, with notifications
 
-Open `admin.html` on the phone and install it — Chrome on Android shows an **Install** button in the Notifications panel; on iPhone use Share → **Add to Home Screen**. There is deliberately no service worker, so the installed app never shows stale data.
+Open `admin.html` on the phone and install it — Chrome on Android shows an **Install** button in the Notifications panel; on iPhone use Share → **Add to Home Screen**. The only service worker is `firebase-messaging-sw.js`, which receives pushes and has no fetch handler, so nothing is ever cached.
 
-New requests are pushed to the admin's phone through [ntfy.sh](https://ntfy.sh) (Apps Script cannot send Web Push on its own):
+New requests are pushed to admin phones with **Firebase Cloud Messaging**. One-time setup:
 
-1. Install the free **ntfy** app on the phone.
-2. In the admin console's **Notifications** panel press **New topic**, then **Save**.
-3. Subscribe to that topic in ntfy (or press **Subscribe** on the phone), then press **Send test**.
+1. [Firebase console](https://console.firebase.google.com) → **Add project** (Analytics can be off).
+2. Project settings → General → **Add app → Web**. Copy the `firebaseConfig` values into `firebase-config.js`.
+3. Project settings → **Cloud Messaging** → Web Push certificates → **Generate key pair**. Put that key in `FIREBASE_VAPID_KEY` in the same file. Both are public; commit and deploy the site.
+4. Project settings → **Service accounts** → **Generate new private key**. In Apps Script → Project Settings → **Script properties**, add `FCM_SERVICE_ACCOUNT` with the whole JSON file as its value. This is the private half — it never goes in the repo.
+5. Run `setup` in Apps Script; it should log `Firebase ready: project …`. Deploy a new version.
+6. On each admin phone press **Turn on for this phone**, then **Send test**.
 
-Only brand-new entries ring — a re-sent or edited entry does not. Priority maps across, so a *Critical* request arrives as an urgent alert. The topic is kept in the script's properties, never in the sheet; anyone who knows it can read the alerts, so keep the generated random one. This needs the `script.external_request` permission: after updating `Code.gs`, run `setup` once more to approve it, then deploy a new version.
+Only brand-new entries ring — a re-sent or edited entry does not — and High/Critical requests are sent as urgent. Tokens of phones that uninstall or block alerts are dropped automatically. iPhone needs iOS 16.4+ and the page opened from the Home Screen.
 
 ## Notes
 

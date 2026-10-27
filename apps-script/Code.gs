@@ -9,8 +9,9 @@
  *
  * Permissions: spreadsheets.currentonly, i.e. "this spreadsheet, nothing
  * else" — no Drive access, no access to your other files — plus
- * script.external_request, used only to post new-request notifications to
- * ntfy.sh. You grant them once; people using the app never see a prompt.
+ * script.external_request, used only to send new-request alerts through
+ * Firebase Cloud Messaging. You grant them once; people using the app never
+ * see a prompt.
  *
  * Actions accepted on POST (body is JSON sent as text/plain):
  *   {action:'ping'}                    → connection test
@@ -27,8 +28,9 @@
  *   {action:'start', id:'...'}         → IT picks the job up; starts the clock
  *   {action:'finish', id:'...'}        → stamp the finish time and duration
  *   {action:'delete', id:'...'}        → remove a row and its pictures
- *   {action:'notify'} / {action:'saveNotify', topic, click} / {action:'testNotify'}
- *                                      → the ntfy.sh topic new requests are pushed to
+ *   {action:'notify'} / {action:'saveToken', token, click} /
+ *   {action:'dropToken', token} / {action:'testNotify'}
+ *                                      → the admin phones new requests are pushed to
  *
  * 'update' and 'delete' are the admin actions. Set ADMIN_KEY below and they
  * require it; 'append' and 'list' stay open so the log book itself works.
@@ -85,7 +87,7 @@ var COL_HELD   = 25;
 /* Only writes queue for the lock. Reads never change a row, and the polling
    from every open screen would otherwise stand in line behind a slow append
    (inserting a picture takes seconds) until it timed out. */
-var WRITES = ['append', 'update', 'start', 'pause', 'resume', 'finish', 'delete', 'saveSettings'];
+var WRITES = ['append', 'update', 'start', 'pause', 'resume', 'finish', 'delete', 'saveSettings', 'saveToken', 'dropToken'];
 
 function doPost(e) {
   var lock = null;
@@ -98,7 +100,7 @@ function doPost(e) {
 
     if (SECRET && body.secret !== SECRET) return reply({ ok: false, error: 'Bad secret' });
 
-    var admin = ['update', 'delete', 'saveSettings', 'notify', 'saveNotify', 'testNotify'].indexOf(body.action) !== -1;
+    var admin = ['update', 'delete', 'saveSettings', 'notify', 'saveToken', 'dropToken', 'testNotify'].indexOf(body.action) !== -1;
     if (admin && ADMIN_KEY && body.key !== ADMIN_KEY) {
       return reply({ ok: false, error: 'Admin key required' });
     }
@@ -108,15 +110,16 @@ function doPost(e) {
       case 'append':
         var added = append_(body.entry);
         /* The row is safely in; let the next writer in before calling out to
-           ntfy, so a slow push never holds up anyone else's entry. */
+           Firebase, so a slow push never holds up anyone else's entry. */
         if (added.ok && added.created) {
           if (lock) { try { lock.releaseLock(); } catch (ignore) {} lock = null; }
           notifyNew_(body.entry);
         }
         return reply(added);
       case 'notify':     return reply(notifySettings_());
-      case 'saveNotify': return reply(saveNotify_(body.topic, body.click));
-      case 'testNotify': return reply(ntfy_({ title: 'KSL Log Book', message: 'Test notification — this phone will be told about new requests.', tags: ['white_check_mark'] }));
+      case 'saveToken':  return reply(saveToken_(body.token, body.click));
+      case 'dropToken':  return reply(dropToken_(body.token));
+      case 'testNotify': return reply(push_({ title: 'KSL Log Book', body: '✅ Test alert — this phone will be told about new requests.', tag: 'test' }));
       case 'update': return reply(update_(body.entry));
       case 'start':  return reply(start_(body.id));
       case 'pause':  return reply(pause_(body.id));
@@ -502,60 +505,151 @@ function saveSettings_(patch) {
 }
 
 /* ── push to the admin's phone ─────────────────────────────────────────
-   Apps Script cannot do Web Push itself, so new requests are relayed through
-   ntfy.sh: the admin installs the ntfy app and subscribes to a topic, and
-   this posts to that topic. The topic lives in script properties rather than
-   the Settings tab — 'settings' is open to every page, and anyone who knows
-   the topic can read what is sent to it. */
-var NTFY_SERVER = 'https://ntfy.sh';
-var NTFY_PRIORITY = { Critical: 5, High: 4, Medium: 3, Low: 2 };
+   Firebase Cloud Messaging. Each admin phone that turns alerts on registers
+   with Firebase and hands this script its token; a new request is then sent
+   to every token through the FCM HTTP v1 API.
 
-function notifySettings_() {
-  var p = PropertiesService.getScriptProperties();
-  return { ok: true, topic: p.getProperty('ntfyTopic') || '', server: NTFY_SERVER };
+   Sending needs the Firebase project's service account. Its JSON key goes
+   under Project Settings → Script properties as FCM_SERVICE_ACCOUNT — typed
+   in there by hand, so the private key never travels through the app and no
+   action ever returns it. The script signs its own short-lived access token
+   with that key, which is why no Google sign-in or extra scope is needed. */
+var FCM_KEY_PROP = 'FCM_SERVICE_ACCOUNT';
+var FCM_TOKENS   = 'fcmTokens';
+var FCM_MAX      = 20;                     // phones; one property holds them all
+
+function serviceAccount_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(FCM_KEY_PROP);
+  if (!raw) return null;
+  try {
+    var sa = JSON.parse(raw);
+    return (sa.client_email && sa.private_key && sa.project_id) ? sa : null;
+  } catch (err) { return null; }
 }
 
-/** An empty topic switches notifications off. */
-function saveNotify_(topic, click) {
-  topic = String(topic || '').trim();
-  if (topic && !/^[-_A-Za-z0-9]{6,64}$/.test(topic)) {
-    return { ok: false, error: 'Topic: 6-64 letters, digits, - or _' };
+function tokens_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(FCM_TOKENS) || '[]'); }
+  catch (err) { return []; }
+}
+
+function setTokens_(list) {
+  PropertiesService.getScriptProperties().setProperty(FCM_TOKENS, JSON.stringify(list.slice(-FCM_MAX)));
+}
+
+function notifySettings_() {
+  var sa = serviceAccount_();
+  return { ok: true, configured: !!sa, project: sa ? sa.project_id : '', devices: tokens_().length };
+}
+
+/** A phone turning alerts on. The newest copy of a token goes to the end,
+    so when the list is full it is the longest-silent phone that drops off. */
+function saveToken_(token, click) {
+  token = String(token || '');
+  if (!/^[\w:-]{20,4096}$/.test(token)) return { ok: false, error: 'That is not a Firebase token' };
+  var list = tokens_().filter(function (x) { return x.t !== token; });
+  list.push({ t: token, at: new Date().toISOString() });
+  setTokens_(list);
+  if (click && /^https:\/\//.test(click)) {
+    PropertiesService.getScriptProperties().setProperty('fcmClick', String(click).slice(0, 500));
   }
-  var p = PropertiesService.getScriptProperties();
-  if (topic) p.setProperty('ntfyTopic', topic); else p.deleteProperty('ntfyTopic');
-  if (click && /^https:\/\//.test(click)) p.setProperty('ntfyClick', String(click).slice(0, 500));
   return notifySettings_();
+}
+
+function dropToken_(token) {
+  setTokens_(tokens_().filter(function (x) { return x.t !== String(token || ''); }));
+  return notifySettings_();
+}
+
+/** An OAuth token for FCM, signed with the service account and kept for 50
+    minutes — every push after the first skips the round trip. */
+function fcmAccess_(sa) {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('fcmAccess');
+  if (hit) return hit;
+
+  var now = Math.floor(Date.now() / 1000);
+  var b64 = function (o) { return Utilities.base64EncodeWebSafe(JSON.stringify(o)).replace(/=+$/, ''); };
+  var unsigned = b64({ alg: 'RS256', typ: 'JWT' }) + '.' + b64({
+    iss: sa.client_email, aud: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    iat: now, exp: now + 3600
+  });
+  var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(unsigned, sa.private_key)).replace(/=+$/, '');
+
+  var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post', muteHttpExceptions: true,
+    payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: unsigned + '.' + sig }
+  });
+  var d = {};
+  try { d = JSON.parse(res.getContentText()); } catch (ignore) {}
+  if (!d.access_token) throw new Error('Firebase sign-in failed: ' + (d.error_description || d.error || res.getResponseCode()));
+  cache.put('fcmAccess', d.access_token, 3000);
+  return d.access_token;
+}
+
+/**
+ * Send one alert to every registered phone. A token Firebase no longer
+ * knows — the app was uninstalled, or alerts were switched off in the
+ * browser — is dropped, so the list cleans itself.
+ */
+function push_(note) {
+  var sa = serviceAccount_();
+  if (!sa) return { ok: false, error: 'Firebase is not set up — add ' + FCM_KEY_PROP + ' under Script properties' };
+  var list = tokens_();
+  if (!list.length) return { ok: false, error: 'No phone has turned alerts on yet' };
+
+  var access = fcmAccess_(sa);
+  var click = PropertiesService.getScriptProperties().getProperty('fcmClick') || '';
+  var icon = click ? click.replace(/[^\/]*$/, 'assets/icons/icon-192.png') : '';
+  var url = 'https://fcm.googleapis.com/v1/projects/' + sa.project_id + '/messages:send';
+
+  var reqs = list.map(function (x) {
+    var webpush = {
+      headers: { Urgency: note.urgent ? 'high' : 'normal' },
+      notification: { tag: note.tag || 'ksl', renotify: true, requireInteraction: !!note.urgent }
+    };
+    if (icon) webpush.notification.icon = icon;
+    if (click) webpush.fcm_options = { link: click };
+    return {
+      url: url, method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + access },
+      payload: JSON.stringify({ message: {
+        token: x.t,
+        notification: { title: note.title, body: note.body },
+        data: note.data || {},
+        webpush: webpush
+      } })
+    };
+  });
+
+  var res = UrlFetchApp.fetchAll(reqs);
+  var sent = 0, dead = {}, why = '';
+  for (var i = 0; i < res.length; i++) {
+    var code = res[i].getResponseCode(), text = res[i].getContentText();
+    if (code < 300) { sent++; continue; }
+    if (code === 404 || /UNREGISTERED|not a valid FCM registration token/i.test(text)) dead[list[i].t] = true;
+    else why = 'FCM replied ' + code + ': ' + text.slice(0, 200);
+  }
+  if (Object.keys(dead).length) {
+    // re-read: a phone may have registered while these were in flight
+    setTokens_(tokens_().filter(function (x) { return !dead[x.t]; }));
+  }
+  if (!sent) return { ok: false, error: why || 'No phone could be reached — turn alerts on again' };
+  return { ok: true, sent: sent, failed: list.length - sent };
 }
 
 function notifyNew_(e) {
   try {
     var req = String(e.request || '');
-    ntfy_({
-      title: 'New request · ' + (e.ticket || ''),
-      message: (e.name || '?') + ' · ' + (e.department || '?') + '\n' +
-               (e.category || '') + ' · ' + (e.priority || '') + '\n\n' +
-               (req.length > 300 ? req.slice(0, 300) + '…' : req),
-      priority: NTFY_PRIORITY[e.priority] || 3,
-      tags: [e.priority === 'Critical' ? 'rotating_light' : 'bell']
+    push_({
+      title: (e.priority === 'Critical' ? '🚨 ' : '') + 'New request · ' + (e.ticket || ''),
+      body: (e.name || '?') + ' · ' + (e.department || '?') + ' · ' + (e.priority || '') + '\n' +
+            (req.length > 200 ? req.slice(0, 200) + '…' : req),
+      urgent: e.priority === 'Critical' || e.priority === 'High',
+      tag: 'req-' + (e.id || ''),
+      data: { id: String(e.id || ''), ticket: String(e.ticket || '') }
     });
   } catch (ignore) {}                       // a missed push must never cost the entry
-}
-
-/** Publish one message, as JSON so a Malay name or an emoji survives. */
-function ntfy_(msg) {
-  var p = PropertiesService.getScriptProperties();
-  var topic = p.getProperty('ntfyTopic');
-  if (!topic) return { ok: false, error: 'No topic set — notifications are off' };
-  msg.topic = topic;
-  var click = p.getProperty('ntfyClick');
-  if (click) msg.click = click;
-
-  var res = UrlFetchApp.fetch(NTFY_SERVER, {
-    method: 'post', contentType: 'application/json',
-    payload: JSON.stringify(msg), muteHttpExceptions: true
-  });
-  var code = res.getResponseCode();
-  return code < 300 ? { ok: true } : { ok: false, error: 'ntfy replied ' + code + ': ' + res.getContentText().slice(0, 200) };
 }
 
 /* ── helpers ───────────────────────────────────────────────────────── */
@@ -683,13 +777,19 @@ function reply(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/* Run this once from the editor to approve both scopes, then deploy. It
-   reaches ntfy as well as the sheet, so the consent screen asks for both —
-   and if appsscript.json still pins the sheet scope alone, the error shows
-   up here rather than on the admin's phone. */
+/* Run this once from the editor to approve both scopes, then deploy. Once
+   FCM_SERVICE_ACCOUNT is in Script properties, run it again: it signs in to
+   Firebase, so a bad key shows up here rather than on the admin's phone. */
 function setup() {
   var s = sheet_();
   Logger.log('Ready: %s / %s', s.getParent().getName(), s.getName());
-  var code = UrlFetchApp.fetch(NTFY_SERVER + '/v1/health', { muteHttpExceptions: true }).getResponseCode();
-  Logger.log('ntfy reachable: HTTP %s', code);
+  var sa = serviceAccount_();
+  if (!sa) {
+    Logger.log('Firebase: not set up yet — add %s under Project Settings → Script properties', FCM_KEY_PROP);
+    UrlFetchApp.fetch('https://oauth2.googleapis.com/token', { muteHttpExceptions: true });   // asks for the permission now
+    return;
+  }
+  CacheService.getScriptCache().remove('fcmAccess');
+  fcmAccess_(sa);
+  Logger.log('Firebase ready: project %s · %s phone(s) registered', sa.project_id, tokens_().length);
 }

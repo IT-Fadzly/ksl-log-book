@@ -39,7 +39,7 @@ tailwind.config = {
   } }
 }
 </script>
-<link rel="stylesheet" href="assets/css/style.css?v=17" />
+<link rel="stylesheet" href="assets/css/style.css?v=18" />
 </head>
 <body class="min-h-[100dvh] bg-surface font-sans text-ink antialiased">
 
@@ -151,34 +151,19 @@ tailwind.config = {
       </div>
     </div>
 
-    <!-- new-request alerts on the admin's phone, through ntfy.sh -->
+    <!-- new-request alerts on the admin's phone, through Firebase -->
     <div class="glass mt-4 p-5">
       <h3 class="chart-title">Notifications</h3>
-      <p class="chart-sub">A push to your phone each time a new request is filed</p>
+      <p class="chart-sub">A push to this phone each time a new request is filed</p>
 
-      <ol class="mt-4 list-decimal space-y-1 pl-5 text-[13px] text-subink">
-        <li>Install the free <b>ntfy</b> app —
-          <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener" class="text-neon underline">Android</a> ·
-          <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener" class="text-neon underline">iPhone</a></li>
-        <li>Press <b>New topic</b>, then <b>Save</b>.</li>
-        <li>In ntfy, tap <b>+</b> and subscribe to the same topic — or press <b>Subscribe</b> on the phone.</li>
-        <li>Press <b>Send test</b>; the phone should ring within a few seconds.</li>
-      </ol>
-
-      <div class="mt-4 space-y-3">
-        <label class="fl block">
-          <input id="ntfy-topic" maxlength="64" autocomplete="off" spellcheck="false" placeholder=" " class="input peer font-mono" />
-          <span class="fl-label">Topic (empty = off)</span>
-        </label>
-        <div class="flex flex-wrap items-center gap-2">
-          <button id="ntfy-new" class="chip chip-ghost">New topic</button>
-          <button id="ntfy-save" class="btn-primary !py-2.5 !px-5">Save</button>
-          <button id="ntfy-test" class="chip chip-ghost">Send test</button>
-          <a id="ntfy-sub" href="#" target="_blank" rel="noopener" class="chip chip-ghost" hidden>Subscribe</a>
-          <span id="ntfy-state" class="text-[12px] text-muted"></span>
-        </div>
-        <p class="text-[11px] text-muted">Anyone who knows the topic can read these alerts, so keep it long and random — New topic makes one. Kept in the script, not the sheet.</p>
+      <p id="push-status" class="mt-4 text-[13px] text-subink">Checking…</p>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button id="push-on" class="btn-primary !py-2.5 !px-5">Turn on for this phone</button>
+        <button id="push-test" class="chip chip-ghost">Send test</button>
+        <button id="push-off" class="chip chip-ghost" hidden>Turn off here</button>
+        <span id="push-state" class="text-[12px] text-muted"></span>
       </div>
+      <p class="mt-3 text-[11px] text-muted">Each phone turns alerts on for itself. On iPhone (iOS 16.4 or later) add this page to the Home Screen first and open it from there — Safari in a tab cannot receive pushes.</p>
 
       <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-line/70 pt-4">
         <span class="text-[13px] text-subink">Keep this page on the phone as an app:</span>
@@ -238,6 +223,9 @@ tailwind.config = {
 
 <div id="toast-wrap" class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script>
   /* Load the app with a fresh URL every time. The pages are meant to be
      uncached, and a fixed ?v= number only works if it is remembered to be

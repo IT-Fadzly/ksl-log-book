@@ -674,10 +674,15 @@ async function loadBrand() {
   } catch (ignore) {}
 }
 
-/* ── no service worker, no cached copies ───────────────────────────── */
+/* ── no service worker, no cached copies ─────────────────────────────
+   Except the push worker: it caches nothing, and removing it here would
+   silence the admin's alerts whenever the log book was opened on that phone. */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations()
-    .then(rs => rs.forEach(r => r.unregister()))
+    .then(rs => rs.forEach(r => {
+      const w = r.active || r.waiting || r.installing;
+      if (!(w && /firebase-messaging-sw\.js/.test(w.scriptURL))) r.unregister();
+    }))
     .catch(() => {});
 }
 if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
